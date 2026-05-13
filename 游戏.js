@@ -901,6 +901,12 @@ ${(() => {
    格式：[通缉] — 被宗门、势力、或全城正式通缉
    格式：[濒死] — 角色从濒死边缘活了下来
    格式：[偏离主线] — 主线剧情被玩家玩歪了
+   格式：[死亡] — 角色已死。仅当生命值降为0或剧情中确实死亡时使用。必须同时给出一个文学化的死亡场景叙述作为故事的终结。
+
+7. 【生命值与伤害——极其重要】
+   - 每次角色在叙事中受到实际伤害（被击中、坠落、中毒、诅咒等），必须在回复末尾用 [属性变化：hp=-X] 标注扣血量。X与伤害严重程度成正比：轻伤5-15，中等15-30，重伤30-50，致命50+。
+   - 战斗不是走过场——对峙、冲突、战斗都会有真实的代价。不要害怕伤害角色，这是故事张力的一部分。
+   - 当生命值降为0或以下时，角色死亡。必须给出一段文学化的死亡场景，然后标注[死亡]。故事就此终结。
 
 【隐藏命格——在叙事中持续体现】
 ${(() => {
@@ -1149,6 +1155,12 @@ async function sendCommand() {
 
     checkAchievements();
     saveState();
+
+    // Death check
+    if (state.stats.hp !== undefined && state.stats.hp <= 0) {
+      handlePlayerDeath();
+      return;
+    }
   } catch (err) {
     removeThinkingIndicator();
     const errEl = document.createElement('div');
@@ -1161,6 +1173,90 @@ async function sendCommand() {
   input.disabled = false;
   btn.disabled = false;
   input.focus();
+}
+
+function handlePlayerDeath() {
+  state.gameStarted = false;
+  const input = document.getElementById('command-input');
+  const btn = document.getElementById('btn-send');
+  if (input) { input.disabled = true; input.placeholder = '你已经死了……'; }
+  if (btn) btn.disabled = true;
+
+  const area = document.getElementById('narrative-area');
+  const deathEl = document.createElement('div');
+  deathEl.className = 'narrative-entry';
+  deathEl.innerHTML = `<div style="text-align:center;padding:32px 16px;margin-top:16px;border:1px solid #8b3a3a;border-radius:8px;background:rgba(139,58,58,0.08)">
+    <div style="font-size:48px;margin-bottom:16px">💀</div>
+    <div style="font-size:22px;color:#c47a7a;letter-spacing:6px;margin-bottom:12px">命 运 终 结</div>
+    <div style="font-size:14px;color:var(--text-dim);margin-bottom:24px">${escapeHtml(state.playerName)} 的故事在此画上句点。</div>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+      <button onclick="restartGame()" style="background:rgba(139,117,40,0.12);border:1px solid var(--accent);color:var(--accent-bright);padding:10px 28px;font-size:14px;font-family:var(--font-ui);cursor:pointer;border-radius:var(--radius);letter-spacing:3px;transition:all var(--transition-fast)">重新开始</button>
+      <button onclick="loadLastSave()" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:10px 28px;font-size:14px;font-family:var(--font-ui);cursor:pointer;border-radius:var(--radius);letter-spacing:3px;transition:all var(--transition-fast)">读取存档</button>
+      <button onclick="showScreen('title')" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:10px 28px;font-size:14px;font-family:var(--font-ui);cursor:pointer;border-radius:var(--radius);letter-spacing:3px;transition:all var(--transition-fast)">返回标题</button>
+    </div>
+  </div>`;
+  area.appendChild(deathEl);
+  scrollToBottom();
+
+  document.getElementById('suggestion-buttons').innerHTML = '';
+  const suggestBtn = document.getElementById('btn-suggest');
+  const daredevilBtn = document.getElementById('btn-daredevil');
+  if (suggestBtn) suggestBtn.style.display = 'none';
+  if (daredevilBtn) daredevilBtn.style.display = 'none';
+}
+
+function restartGame() {
+  state.stats = { ...getWorldStats(state.worldGenre).stats };
+  state.inventory = [];
+  state.location = '';
+  state.worldMemory = '';
+  state.relationships = [];
+  state.fullHistory = [];
+  state.apiHistory = [];
+  state.plot = getInitialPlot(state.worldGenre);
+  state.gameStarted = true;
+  state.annals = [];
+  state.unlockedAchievements = [];
+  state.recklessCount = 0;
+  state.critFailCount = 0;
+  state.critSuccessCount = 0;
+  const input = document.getElementById('command-input');
+  const btn = document.getElementById('btn-send');
+  if (input) { input.disabled = false; input.placeholder = '你要做什么？'; }
+  if (btn) btn.disabled = false;
+  const sBtn = document.getElementById('btn-suggest');
+  const dBtn = document.getElementById('btn-daredevil');
+  if (sBtn) sBtn.style.display = '';
+  if (dBtn) dBtn.style.display = '';
+  showScreen('game');
+  // Trigger a fresh start
+  startNewGame();
+}
+
+function loadLastSave() {
+  const input = document.getElementById('command-input');
+  const btn = document.getElementById('btn-send');
+  if (input) { input.disabled = false; input.placeholder = '你要做什么？'; }
+  if (btn) btn.disabled = false;
+  const sBtn = document.getElementById('btn-suggest');
+  const dBtn = document.getElementById('btn-daredevil');
+  if (sBtn) sBtn.style.display = '';
+  if (dBtn) dBtn.style.display = '';
+  if (loadSave()) {
+    showScreen('game');
+    renderFullHistory();
+    resetSuggestions();
+    document.getElementById('command-input').focus();
+  } else {
+    // Try loading from slot 0
+    const raw = localStorage.getItem('text_adventure_slot_0');
+    if (raw) {
+      loadSlot(0);
+    } else {
+      toast('没有找到存档', 'error');
+      showScreen('title');
+    }
+  }
 }
 
 function buildApiMessages(systemPrompt, currentCommand) {
