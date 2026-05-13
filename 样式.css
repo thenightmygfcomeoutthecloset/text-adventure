@@ -142,6 +142,13 @@ body::before {
   letter-spacing: 6px;
   font-family: var(--font-ui);
 }
+.title-main .version-tag {
+  font-size: 11px;
+  color: rgba(139,117,40,0.35);
+  letter-spacing: 2px;
+  font-family: var(--font-ui);
+  margin-top: 6px;
+}
 
 .title-actions {
   display: flex;
