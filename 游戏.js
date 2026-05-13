@@ -425,8 +425,22 @@ function goToCharScreen() {
   }
   showScreen('char');
   renderDestinyOptions();
-  renderStoryStyleOptions();
-  renderChaosLevelOptions();
+  document.getElementById('advanced-content').classList.add('hidden');
+  document.querySelector('.advanced-arrow').textContent = '▸';
+}
+
+function toggleAdvancedOptions() {
+  const content = document.getElementById('advanced-content');
+  const arrow = document.querySelector('.advanced-arrow');
+  if (content.classList.contains('hidden')) {
+    content.classList.remove('hidden');
+    arrow.textContent = '▾';
+    renderStoryStyleOptions();
+    renderChaosLevelOptions();
+  } else {
+    content.classList.add('hidden');
+    arrow.textContent = '▸';
+  }
 }
 
 let novelFileContent = '';

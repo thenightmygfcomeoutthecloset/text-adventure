@@ -141,13 +141,18 @@
         <div class="cc-options" id="destiny-options"></div>
       </div>
       <div id="char-attrs-container"></div>
-      <div class="cc-section">
-        <div class="cc-label">剧情风格</div>
-        <div class="cc-options" id="story-style-options"></div>
-      </div>
-      <div class="cc-section">
-        <div class="cc-label">剧情失控度</div>
-        <div class="cc-options" id="chaos-level-options"></div>
+      <div class="cc-section" id="advanced-section">
+        <div class="cc-label advanced-toggle" onclick="toggleAdvancedOptions()">⚙ 其他设定 <span class="advanced-arrow">▸</span></div>
+        <div class="advanced-content hidden" id="advanced-content">
+          <div class="cc-section">
+            <div class="cc-label">剧情风格</div>
+            <div class="cc-options" id="story-style-options"></div>
+          </div>
+          <div class="cc-section">
+            <div class="cc-label">剧情失控度</div>
+            <div class="cc-options" id="chaos-level-options"></div>
+          </div>
+        </div>
       </div>
       <button class="btn-random-all" onclick="randomAllAttributes()">🎲 一键随机角色</button>
     </div>

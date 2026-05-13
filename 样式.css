@@ -383,6 +383,11 @@ body::before {
 .cc-section { margin-bottom: 22px; }
 .cc-section .cc-label { font-size: 13px; color: var(--text); letter-spacing: 3px; margin-bottom: 10px; font-family: var(--font-ui); }
 .cc-section .cc-label .cc-desc { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; opacity: 0.7; margin-left: 8px; font-weight: 400; }
+.advanced-toggle { cursor: pointer; user-select: none; transition: color var(--transition-fast); }
+.advanced-toggle:hover { color: var(--accent-bright); }
+.advanced-arrow { display: inline-block; transition: transform var(--transition-fast); font-size: 12px; margin-left: 2px; }
+.advanced-content { overflow: hidden; }
+.advanced-content:not(.hidden) { animation: fadeIn 0.3s ease-out; }
 .cc-options { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cc-option-custom {
   font-size: 13px;
