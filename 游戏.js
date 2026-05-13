@@ -1081,6 +1081,8 @@ async function sendCommand() {
   input.value = '';
   input.disabled = true;
   btn.disabled = true;
+  document.getElementById('btn-suggest').disabled = true;
+  document.getElementById('btn-daredevil').disabled = true;
 
   // Dice roll for risky actions
   let rollResult = null;
@@ -1172,6 +1174,8 @@ async function sendCommand() {
 
   input.disabled = false;
   btn.disabled = false;
+  document.getElementById('btn-suggest').disabled = false;
+  document.getElementById('btn-daredevil').disabled = false;
   input.focus();
 }
 
