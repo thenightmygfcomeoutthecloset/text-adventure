@@ -16,6 +16,8 @@ function loadIdentity() {
 function initIdentity() {
   var id = loadIdentity();
   if (id) { currentUser = { id: id.id, email: id.email, displayName: id.displayName || id.email }; }
+  var savedSession = localStorage.getItem('text_adventure_session');
+  if (savedSession) { try { supabaseSession = JSON.parse(savedSession); } catch(e) { supabaseSession = null; } }
   updateAuthUI();
 }
 
@@ -165,6 +167,7 @@ async function localSignIn(input, password) {
 function signOut() {
   currentUser = null;
   supabaseSession = null;
+  localStorage.removeItem('text_adventure_session');
   updateAuthUI();
   toast('已退出登录');
   refreshTitleButtons();
@@ -261,6 +264,7 @@ async function cloudSignUp(account, password) {
   var data = await resp.json();
   if (data.session && data.session.access_token) { supabaseSession = data.session; }
   else if (data.access_token) { supabaseSession = data; }
+  localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
   return { data: { user: data.user || data, session: data.session || (data.access_token ? data : null) }, error: null };
 }
 
@@ -276,6 +280,7 @@ async function cloudSignIn(account, password) {
   }
   var data = await resp.json();
   if (data.access_token) { supabaseSession = data; }
+  localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
   return { data: { user: data.user || { id: data.user_id || 'u_' + account, email: account }, session: data }, error: null };
 }
 
