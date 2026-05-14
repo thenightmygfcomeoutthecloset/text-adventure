@@ -36,6 +36,16 @@ function normalizeAccount(input) {
   return { account: trimmed, display: trimmed, type: 'email' };
 }
 
+// Timeout wrapper for async calls
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error('timeout')); }, ms);
+    })
+  ]);
+}
+
 async function localRegister(input, password) {
   if (!input || !password) { toast('请输入手机号/邮箱和密码', 'error'); return; }
   if (password.length < 6) { toast('密码至少6位', 'error'); return; }
@@ -45,7 +55,7 @@ async function localRegister(input, password) {
 
   // 1) Try Supabase cloud registration first (cross-device)
   if (supabase) {
-    var result = await supabase.auth.signUp({ email: account, password: password });
+    var result = await withTimeout(supabase.auth.signUp({ email: account, password: password }), 8000).catch(function(e) { return { data: null, error: e }; });
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
@@ -54,6 +64,9 @@ async function localRegister(input, password) {
         saveIdentity(id);
         currentUser = { id: id.id, email: id.email };
         updateAuthUI();
+        closeLoginModal();
+        document.getElementById('auth-email').value = '';
+        document.getElementById('auth-password').value = '';
         toast('注册成功，「' + display + '」已登录 ☁️');
         refreshTitleButtons();
         return;
@@ -78,6 +91,9 @@ async function localRegister(input, password) {
   currentUser = { id: id.id, email: id.email };
   updateAuthUI();
   toast('注册成功（仅本设备），「' + display + '」已登录 💻');
+  closeLoginModal();
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
   refreshTitleButtons();
 }
 
@@ -89,7 +105,7 @@ async function localSignIn(input, password) {
 
   // 1) Try Supabase cloud login first (cross-device)
   if (supabase) {
-    var result = await supabase.auth.signInWithPassword({ email: account, password: password });
+    var result = await withTimeout(supabase.auth.signInWithPassword({ email: account, password: password }), 8000).catch(function(e) { return { data: null, error: e }; });
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
@@ -97,6 +113,9 @@ async function localSignIn(input, password) {
       saveIdentity(id);
       currentUser = { id: id.id, email: id.email };
       updateAuthUI();
+      closeLoginModal();
+      document.getElementById('auth-email').value = '';
+      document.getElementById('auth-password').value = '';
       toast('欢迎回来，' + display + ' ☁️');
       refreshTitleButtons();
       return;
@@ -118,6 +137,9 @@ async function localSignIn(input, password) {
   if (localId.passwordHash !== hashPassword(password)) { toast('密码错误', 'error'); return; }
   currentUser = { id: localId.id, email: localId.email };
   updateAuthUI();
+  closeLoginModal();
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
   toast('欢迎回来，' + display + ' 💻');
   refreshTitleButtons();
 }
@@ -153,20 +175,25 @@ function closeLoginModal() {
   document.getElementById('auth-password').value = '';
 }
 function handleSignIn() {
-  const input = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value.trim();
-  localSignIn(input, password);
-  document.getElementById('auth-email').value = '';
-  document.getElementById('auth-password').value = '';
-  closeLoginModal();
+  var input = document.getElementById('auth-email').value.trim();
+  var password = document.getElementById('auth-password').value.trim();
+  if (!input || !password) { toast('请输入手机号/邮箱和密码', 'error'); return; }
+  var btn = document.getElementById('btn-signin');
+  btn.disabled = true; btn.textContent = '处理中...';
+  localSignIn(input, password).finally(function() {
+    btn.disabled = false; btn.textContent = '登 录';
+  });
 }
 function handleRegister() {
-  const input = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value.trim();
-  localRegister(input, password);
-  document.getElementById('auth-email').value = '';
-  document.getElementById('auth-password').value = '';
-  if (currentUser) closeLoginModal();
+  var input = document.getElementById('auth-email').value.trim();
+  var password = document.getElementById('auth-password').value.trim();
+  if (!input || !password) { toast('请输入手机号/邮箱和密码', 'error'); return; }
+  if (password.length < 6) { toast('密码至少6位', 'error'); return; }
+  var btn = document.getElementById('btn-signup');
+  btn.disabled = true; btn.textContent = '处理中...';
+  localRegister(input, password).finally(function() {
+    btn.disabled = false; btn.textContent = '注 册';
+  });
 }
 function refreshTitleButtons() {
   showScreen('title');
