@@ -27,53 +27,98 @@ function guestLogin() {
   refreshTitleButtons();
 }
 
-async function localRegister(email, password) {
-  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
-  if (password.length < 6) { toast('密码至少6位', 'error'); return; }
-  const existing = loadIdentity();
-  if (existing && existing.email === email && existing.passwordHash) {
-    toast('此邮箱已注册，请直接登录', 'error'); return;
+// Normalize phone number to email format for Supabase, keep original for display
+function normalizeAccount(input) {
+  var trimmed = input.trim();
+  if (/^1[3-9]\d{9}$/.test(trimmed)) {
+    return { account: trimmed + '@phone.user', display: trimmed, type: 'phone' };
   }
-  const id = { id: makeId(), email: email, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
+  return { account: trimmed, display: trimmed, type: 'email' };
+}
+
+async function localRegister(input, password) {
+  if (!input || !password) { toast('请输入手机号/邮箱和密码', 'error'); return; }
+  if (password.length < 6) { toast('密码至少6位', 'error'); return; }
+  var norm = normalizeAccount(input);
+  var account = norm.account;
+  var display = norm.display;
+
+  // 1) Try Supabase cloud registration first (cross-device)
+  if (supabase) {
+    var result = await supabase.auth.signUp({ email: account, password: password });
+    var data = result.data;
+    var error = result.error;
+    if (!error && data.user) {
+      var id = { id: makeId(), email: display, supabaseId: data.user.id, createdAt: new Date().toISOString() };
+      if (data.session) {
+        saveIdentity(id);
+        currentUser = { id: id.id, email: id.email };
+        updateAuthUI();
+        toast('注册成功，「' + display + '」已登录 ☁️');
+        refreshTitleButtons();
+        return;
+      } else {
+        toast('已发送确认邮件到 ' + display + '，请查收后登录 📧');
+        return;
+      }
+    }
+    if (error && error.message && error.message.indexOf('already') !== -1) {
+      toast('该账号已注册，请直接登录', 'error'); return;
+    }
+    console.warn('[Auth] Supabase signUp failed, using local fallback:', error);
+  }
+
+  // 2) Local fallback
+  var existing = loadIdentity();
+  if (existing && existing.email === display && existing.passwordHash) {
+    toast('该账号已注册，请直接登录', 'error'); return;
+  }
+  var id = { id: makeId(), email: display, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
   saveIdentity(id);
   currentUser = { id: id.id, email: id.email };
-
-  // Try Supabase cloud registration in background
-  if (supabase) {
-    supabase.auth.signUp({ email, password }).then(({ data, error }) => {
-      if (!error && data.user) {
-        // Link local identity to Supabase user
-        id.supabaseId = data.user.id;
-        saveIdentity(id);
-        toast('☁️ 云端同步已启用');
-      }
-    }).catch(() => {});
-  }
-
   updateAuthUI();
-  toast('注册成功，「' + email + '」已登录 ✨');
+  toast('注册成功（仅本设备），「' + display + '」已登录 💻');
   refreshTitleButtons();
 }
 
-async function localSignIn(email, password) {
-  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
-  const id = loadIdentity();
-  if (!id || id.email !== email) { toast('邮箱未注册', 'error'); return; }
-  if (id.passwordHash !== hashPassword(password)) { toast('密码错误', 'error'); return; }
-  currentUser = { id: id.id, email: id.email };
+async function localSignIn(input, password) {
+  if (!input || !password) { toast('请输入手机号/邮箱和密码', 'error'); return; }
+  var norm = normalizeAccount(input);
+  var account = norm.account;
+  var display = norm.display;
 
-  // Try Supabase cloud login in background
+  // 1) Try Supabase cloud login first (cross-device)
   if (supabase) {
-    supabase.auth.signInWithPassword({ email, password }).then(({ data, error }) => {
-      if (!error && data.user) {
-        if (!id.supabaseId) { id.supabaseId = data.user.id; saveIdentity(id); }
-        toast('☁️ 云端同步已连接');
+    var result = await supabase.auth.signInWithPassword({ email: account, password: password });
+    var data = result.data;
+    var error = result.error;
+    if (!error && data.user) {
+      var id = { id: makeId(), email: display, supabaseId: data.user.id, createdAt: data.user.created_at || new Date().toISOString() };
+      saveIdentity(id);
+      currentUser = { id: id.id, email: id.email };
+      updateAuthUI();
+      toast('欢迎回来，' + display + ' ☁️');
+      refreshTitleButtons();
+      return;
+    }
+    if (error) {
+      if (error.message && error.message.indexOf('Invalid login') !== -1) {
+        toast('账号或密码错误', 'error'); return;
       }
-    }).catch(() => {});
+      if (error.message && error.message.indexOf('Email not confirmed') !== -1) {
+        toast('请先确认邮箱后再登录 📧', 'error'); return;
+      }
+      console.warn('[Auth] Supabase signIn failed, trying local:', error);
+    }
   }
 
+  // 2) Local fallback
+  var localId = loadIdentity();
+  if (!localId || localId.email !== display) { toast('账号未注册', 'error'); return; }
+  if (localId.passwordHash !== hashPassword(password)) { toast('密码错误', 'error'); return; }
+  currentUser = { id: localId.id, email: localId.email };
   updateAuthUI();
-  toast('欢迎回来，' + email + ' ✨');
+  toast('欢迎回来，' + display + ' 💻');
   refreshTitleButtons();
 }
 
@@ -110,7 +155,7 @@ function closeLoginModal() {
 function handleSignIn() {
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
-  localSignIn(email, password);
+  localSignIn(input, password);
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
   closeLoginModal();
@@ -118,7 +163,7 @@ function handleSignIn() {
 function handleRegister() {
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
-  localRegister(email, password);
+  localRegister(input, password);
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
   if (currentUser) closeLoginModal();

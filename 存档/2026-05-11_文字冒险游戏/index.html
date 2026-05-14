@@ -40,9 +40,9 @@
       <div class="login-modal-bg" onclick="closeLoginModal()"></div>
       <div class="login-modal-panel">
         <button class="login-modal-close" onclick="closeLoginModal()">✕</button>
-        <h3 class="login-modal-title">邮箱登录 / 注册</h3>
-        <p class="login-modal-hint">数据仅保存在你的浏览器中</p>
-        <input type="text" id="auth-email" placeholder="请输入邮箱" autocomplete="email" class="auth-input">
+        <h3 class="login-modal-title">登录 / 注册</h3>
+        <p class="login-modal-hint">支持手机号或邮箱，数据云端同步</p>
+        <input type="text" id="auth-email" placeholder="请输入手机号 / 邮箱" autocomplete="off" class="auth-input">
         <input type="password" id="auth-password" placeholder="请输入密码（至少6位）" autocomplete="current-password" class="auth-input">
         <div class="auth-buttons">
           <button id="btn-signin" onclick="handleSignIn()">登 录</button>
