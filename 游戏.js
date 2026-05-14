@@ -1,5 +1,6 @@
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
 let currentUser = null; // { id, email, displayName }
+var supabaseSession = null; // session with access_token from cloud auth
 
 function makeId() { return 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
 function hashPassword(pw) { let h = 0; for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h + pw.charCodeAt(i)) | 0; } return 'h_' + Math.abs(h).toString(36); }
@@ -163,6 +164,7 @@ async function localSignIn(input, password) {
 
 function signOut() {
   currentUser = null;
+  supabaseSession = null;
   updateAuthUI();
   toast('已退出登录');
   refreshTitleButtons();
@@ -230,10 +232,20 @@ function refreshTitleButtons() {
 // ═══════════════════ OPTIONAL SUPABASE CLOUD SYNC (direct fetch, no SDK) ═══════════════════
 var SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
 var SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
-var SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5ZHZsYWhkeWNxdHRsamVzb2t3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODczOTAwNywiZXhwIjoyMDk0MzE1MDA3fQ.Fr4jYGyya3jmE3Xe2hvP5K8D7icWcS6h3nooy3kxHOo';
 
 function cloudAuthHeaders() {
   return { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
+}
+
+function cloudStorageHeaders() {
+  var token = (supabaseSession && supabaseSession.access_token)
+    ? supabaseSession.access_token
+    : SUPABASE_ANON_KEY;
+  return {
+    'Authorization': 'Bearer ' + token,
+    'apikey': SUPABASE_ANON_KEY,
+    'Content-Type': 'application/json'
+  };
 }
 
 async function cloudSignUp(account, password) {
@@ -247,6 +259,8 @@ async function cloudSignUp(account, password) {
     return { data: null, error: { message: err.msg || err.message || ('HTTP ' + resp.status) } };
   }
   var data = await resp.json();
+  if (data.session && data.session.access_token) { supabaseSession = data.session; }
+  else if (data.access_token) { supabaseSession = data; }
   return { data: { user: data.user || data, session: data.session || (data.access_token ? data : null) }, error: null };
 }
 
@@ -261,6 +275,7 @@ async function cloudSignIn(account, password) {
     return { data: null, error: { message: err.error_description || err.msg || ('HTTP ' + resp.status) } };
   }
   var data = await resp.json();
+  if (data.access_token) { supabaseSession = data; }
   return { data: { user: data.user || { id: data.user_id || 'u_' + account, email: account }, session: data }, error: null };
 }
 
@@ -272,7 +287,7 @@ async function migrateSaves(oldId, newId) {
   try {
     var resp = await fetch(SUPABASE_URL + '/storage/v1/object/list/saves', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+      headers: cloudStorageHeaders(),
       body: JSON.stringify({ prefix: oldId + '/', limit: 50, offset: 0 })
     });
     if (!resp.ok) return;
@@ -282,13 +297,13 @@ async function migrateSaves(oldId, newId) {
       var newPath = newId + '/' + files[i].name;
       // Copy: download then upload
       var dl = await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + oldPath, {
-        headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY }
+        headers: cloudStorageHeaders()
       });
       if (dl.ok) {
         var blob = await dl.blob();
         await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + newPath, {
           method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+          headers: cloudStorageHeaders(),
           body: blob
         });
       }
@@ -309,7 +324,7 @@ async function migrateSaves(oldId, newId) {
         var path = newId + '/slot_' + s + '.json';
         await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
           method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+          headers: cloudStorageHeaders(),
           body: JSON.stringify(snap)
         });
       }
@@ -325,7 +340,7 @@ async function cloudSave(slot) {
     var path = currentUser.id + '/slot_' + slot + '.json';
     await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+      headers: cloudStorageHeaders(),
       body: JSON.stringify(snap)
     });
   } catch(e) {}
@@ -336,7 +351,7 @@ async function cloudLoad(slot) {
   try {
     var path = currentUser.id + '/slot_' + slot + '.json';
     var resp = await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
-      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY }
+      headers: cloudStorageHeaders()
     });
     if (!resp.ok) return null;
     return await resp.json();
@@ -349,7 +364,7 @@ async function cloudDelete(slot) {
     var path = currentUser.id + '/slot_' + slot + '.json';
     await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
       method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY }
+      headers: cloudStorageHeaders()
     });
   } catch(e) {}
 }
@@ -359,7 +374,7 @@ async function cloudListSlots() {
   try {
     var resp = await fetch(SUPABASE_URL + '/storage/v1/object/list/saves', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+      headers: cloudStorageHeaders(),
       body: JSON.stringify({ prefix: currentUser.id + '/', limit: 50, offset: 0 })
     });
     if (!resp.ok) return [];

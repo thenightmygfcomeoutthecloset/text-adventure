@@ -19,3 +19,6 @@ desktop.ini
 *.swo
 *~
 *.log
+
+# 管理后台（含敏感密钥，仅本地使用）
+管理.html
