@@ -80,9 +80,7 @@ async function localRegister(input, password) {
         saveIdentity(id);
         currentUser = { id: suid, email: display, displayName: nickname };
         updateAuthUI();
-        closeLoginModal();
-        document.getElementById('auth-email').value = '';
-        document.getElementById('auth-password').value = '';
+        closeAuthModal();
         toast('注册成功，「' + display + '」已登录 ☁️');
         refreshTitleButtons();
         if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
@@ -135,9 +133,7 @@ async function localSignIn(input, password) {
       saveIdentity(id);
       currentUser = { id: suid, email: display, displayName: nickname };
       updateAuthUI();
-      closeLoginModal();
-      document.getElementById('auth-email').value = '';
-      document.getElementById('auth-password').value = '';
+      closeAuthModal();
       toast('欢迎回来，' + display + ' ☁️');
       refreshTitleButtons();
       if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
@@ -160,9 +156,7 @@ async function localSignIn(input, password) {
   if (localId.passwordHash !== hashPassword(password)) { toast('密码错误', 'error'); return; }
   currentUser = { id: localId.id, email: localId.email, displayName: localId.displayName || localId.email };
   updateAuthUI();
-  closeLoginModal();
-  document.getElementById('auth-email').value = '';
-  document.getElementById('auth-password').value = '';
+  closeAuthModal();
   toast('欢迎回来，' + display + ' 💻');
   refreshTitleButtons();
 }
@@ -199,8 +193,14 @@ function showLoginModal() {
 }
 function closeLoginModal() {
   document.getElementById('login-modal').classList.add('hidden');
+}
+function clearAuthInputs() {
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
+}
+function closeAuthModal() {
+  closeLoginModal();
+  clearAuthInputs();
 }
 function handleSignIn() {
   var input = document.getElementById('auth-email').value.trim();
@@ -676,22 +676,7 @@ function selectGenreCard(genre) {
   if (state.screen === 'char') renderCharacterCreation(genre);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  // Genre card clicks
-  document.querySelectorAll('.genre-card').forEach(card => {
-    card.addEventListener('click', () => selectGenreCard(card.dataset.genre));
-  });
 
-  // Custom world desc input
-  document.getElementById('custom-world-desc').addEventListener('input', (e) => {
-    state.customWorldDesc = e.target.value;
-  });
-
-  // Enter key on settings inputs
-  document.getElementById('player-name-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') startNewGame();
-  });
-});
 
 // ═══════════════════ CHARACTER CREATION ═══════════════════
 function renderCharacterCreation(genre) {
@@ -2547,6 +2532,23 @@ function toast(msg, type) {
 
 // ═══════════════════ EVENT HANDLERS ═══════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  // Genre card clicks, world settings
+
+  // Genre card clicks
+  document.querySelectorAll('.genre-card').forEach(card => {
+    card.addEventListener('click', () => selectGenreCard(card.dataset.genre));
+  });
+
+  // Custom world desc input
+  document.getElementById('custom-world-desc').addEventListener('input', (e) => {
+    state.customWorldDesc = e.target.value;
+  });
+
+  // Enter key on settings inputs
+  document.getElementById('player-name-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') startNewGame();
+  });
+
   // Init local identity
   initIdentity();
 
@@ -2587,11 +2589,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const save = JSON.parse(raw);
       const savedKey = localStorage.getItem('text_adventure_apikey');
-      if (savedKey) {
-        state.apiKey = savedKey;
-        const apiInput = document.getElementById('api-key-input');
-        if (apiInput) apiInput.value = savedKey;
-      }
+      
       if (save.gameStarted) {
         document.getElementById('btn-continue').style.display = '';
       }
