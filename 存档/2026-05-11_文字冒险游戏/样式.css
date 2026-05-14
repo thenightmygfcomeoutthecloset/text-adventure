@@ -225,6 +225,45 @@ body::before {
   max-width: 360px;
 }
 
+.btn-guest {
+  background: var(--accent-a08);
+  border: 1px solid var(--accent);
+  color: var(--accent-bright);
+  padding: 11px 32px;
+  font-size: 14px;
+  font-family: var(--font-ui);
+  letter-spacing: 4px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all var(--transition-fast);
+  width: 100%;
+  box-sizing: border-box;
+}
+.btn-guest:hover {
+  background: rgba(212,175,55,0.15);
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 4px 0;
+}
+.auth-divider::before, .auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.auth-divider span {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+}
+
 .auth-form {
   display: flex;
   flex-direction: column;

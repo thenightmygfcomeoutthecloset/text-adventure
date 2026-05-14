@@ -32,18 +32,20 @@ if (typeof window.supabase === 'undefined') {
     <!-- Auth Section -->
     <div id="auth-section" class="auth-section">
       <div id="auth-logged-out" class="auth-form">
-        <input type="email" id="auth-email" placeholder="邮箱" autocomplete="email" class="auth-input">
-        <input type="password" id="auth-password" placeholder="密码" autocomplete="current-password" class="auth-input">
+        <button id="btn-guest" class="btn-guest" onclick="guestLogin()">👤 游 客 登 录</button>
+        <div class="auth-divider"><span>或使用邮箱</span></div>
+        <input type="text" id="auth-email" placeholder="邮箱" autocomplete="email" class="auth-input">
+        <input type="password" id="auth-password" placeholder="密码（至少6位）" autocomplete="current-password" class="auth-input">
         <div class="auth-buttons">
-          <button id="btn-signin" onclick="signIn()">登 录</button>
-          <button id="btn-signup" class="ghost" onclick="signUp()">注 册</button>
+          <button id="btn-signin" onclick="handleSignIn()">登 录</button>
+          <button id="btn-signup" class="ghost" onclick="handleRegister()">注 册</button>
         </div>
-        <p class="api-hint" style="margin-top:4px;font-size:10px">注册即自动登录，存档同步至云端</p>
+        <p class="api-hint" style="margin-top:4px;font-size:10px">数据保存在你的浏览器中，不会上传</p>
       </div>
       <div id="auth-logged-in" class="auth-status hidden">
         <span class="auth-user-icon">👤</span>
         <span id="auth-user-email" class="auth-user-email"></span>
-        <button id="btn-signout" class="ghost" onclick="signOut()">登出</button>
+        <button id="btn-signout" class="ghost" onclick="signOut()">退出</button>
       </div>
     </div>
 

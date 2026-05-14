@@ -1,29 +1,67 @@
-// ═══════════════════ SUPABASE INIT ═══════════════════
-const SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
-let supabase = null;
-try {
-  if (window.supabase) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  }
-} catch(e) { supabase = null; }
+// ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
+let currentUser = null; // { id, email }
 
-// ═══════════════════ AUTH FUNCTIONS ═══════════════════
-let currentUser = null;
+function makeId() { return 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+function hashPassword(pw) { let h = 0; for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h + pw.charCodeAt(i)) | 0; } return 'h_' + Math.abs(h).toString(36); }
 
-function hasCloud() { return supabase && currentUser; }
-
-async function checkSession() {
-  if (!supabase) { updateAuthUI(); return; }
-  try {
-    const { data } = await supabase.auth.getSession();
-    currentUser = data.session?.user || null;
-    updateAuthUI();
-  } catch(e) { currentUser = null; updateAuthUI(); }
+function saveIdentity(id) {
+  const identity = { id: id.id, email: id.email, createdAt: id.createdAt || new Date().toISOString() };
+  if (id.passwordHash) identity.passwordHash = id.passwordHash;
+  localStorage.setItem('text_adventure_identity', JSON.stringify(identity));
 }
+function loadIdentity() {
+  try { return JSON.parse(localStorage.getItem('text_adventure_identity')); } catch(e) { return null; }
+}
+function initIdentity() {
+  const id = loadIdentity();
+  if (id) { currentUser = { id: id.id, email: id.email }; }
+  updateAuthUI();
+}
+
+function guestLogin() {
+  const id = { id: makeId(), email: '游客_' + makeId().slice(-4), createdAt: new Date().toISOString() };
+  saveIdentity(id);
+  currentUser = { id: id.id, email: id.email };
+  updateAuthUI();
+  toast('以游客身份进入异界 ✨');
+  refreshTitleButtons();
+}
+
+function localRegister(email, password) {
+  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
+  if (password.length < 6) { toast('密码至少6位', 'error'); return; }
+  // Check if email already registered
+  const existing = loadIdentity();
+  if (existing && existing.email === email && existing.passwordHash) {
+    toast('此邮箱已注册，请直接登录', 'error'); return;
+  }
+  const id = { id: makeId(), email: email, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
+  saveIdentity(id);
+  currentUser = { id: id.id, email: id.email };
+  updateAuthUI();
+  toast('注册成功，「' + email + '」已登录 ✨');
+  refreshTitleButtons();
+}
+
+function localSignIn(email, password) {
+  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
+  const id = loadIdentity();
+  if (!id || id.email !== email) { toast('邮箱未注册', 'error'); return; }
+  if (id.passwordHash !== hashPassword(password)) { toast('密码错误', 'error'); return; }
+  currentUser = { id: id.id, email: id.email };
+  updateAuthUI();
+  toast('欢迎回来，' + email + ' ✨');
+  refreshTitleButtons();
+}
+
+function signOut() {
+  currentUser = null;
+  updateAuthUI();
+  toast('已退出登录');
+  refreshTitleButtons();
+}
+
 function updateAuthUI() {
-  const authSection = document.getElementById('auth-section');
-  if (!supabase && authSection) { authSection.style.display = 'none'; return; }
   const loggedOut = document.getElementById('auth-logged-out');
   const loggedIn = document.getElementById('auth-logged-in');
   const emailEl = document.getElementById('auth-user-email');
@@ -36,77 +74,45 @@ function updateAuthUI() {
     if (loggedIn) loggedIn.classList.add('hidden');
   }
 }
-async function signIn() {
-  if (!supabase) { toast('云端服务不可用', 'error'); return; }
+
+function handleSignIn() {
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
-  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
-  const btnSignin = document.getElementById('btn-signin');
-  const btnSignup = document.getElementById('btn-signup');
-  if (btnSignin) btnSignin.disabled = true;
-  if (btnSignup) btnSignup.disabled = true;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) { toast('登录失败：' + error.message, 'error'); if (btnSignin) btnSignin.disabled = false; if (btnSignup) btnSignup.disabled = false; return; }
-  currentUser = data.user;
-  updateAuthUI();
-  toast('欢迎回来，' + currentUser.email + ' ✨');
-  if (btnSignin) btnSignin.disabled = false;
-  if (btnSignup) btnSignup.disabled = false;
+  localSignIn(email, password);
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
-  refreshTitleButtons();
 }
-async function signUp() {
-  if (!supabase) { toast('云端服务不可用', 'error'); return; }
+function handleRegister() {
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
-  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
-  if (password.length < 6) { toast('密码至少6位', 'error'); return; }
-  const btnSignin = document.getElementById('btn-signin');
-  const btnSignup = document.getElementById('btn-signup');
-  if (btnSignin) btnSignin.disabled = true;
-  if (btnSignup) btnSignup.disabled = true;
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) { toast('注册失败：' + error.message, 'error'); if (btnSignin) btnSignin.disabled = false; if (btnSignup) btnSignup.disabled = false; return; }
-  if (data.user) {
-    currentUser = data.user;
-    updateAuthUI();
-    toast('注册成功，已自动登录 ✨');
-    document.getElementById('auth-email').value = '';
-    document.getElementById('auth-password').value = '';
-  } else {
-    toast('注册邮件已发送，请查收邮箱确认');
-  }
-  if (btnSignin) btnSignin.disabled = false;
-  if (btnSignup) btnSignup.disabled = false;
-  refreshTitleButtons();
-}
-async function signOut() {
-  if (supabase) await supabase.auth.signOut();
-  currentUser = null;
-  updateAuthUI();
-  toast('已登出');
-  refreshTitleButtons();
+  localRegister(email, password);
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
 }
 function refreshTitleButtons() {
   showScreen('title');
 }
 
-// ═══════════════════ CLOUD SAVE HELPERS ═══════════════════
+// ═══════════════════ OPTIONAL SUPABASE CLOUD SYNC ═══════════════════
+const SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
+let supabase = null;
+try {
+  if (window.supabase) supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch(e) { supabase = null; }
+
+function hasCloud() { return supabase && currentUser && currentUser.email.indexOf('游客_') !== 0; }
+
 async function cloudSave(slot) {
   if (!hasCloud()) return;
   try {
     const snap = serializeState();
     await supabase.from('saves').upsert({
-      user_id: currentUser.id,
-      slot: slot,
-      data: snap,
-      player_name: snap.playerName || '',
-      world_genre: snap.worldGenre || '',
-      level: snap.stats?.level || 1,
-      updated_at: new Date().toISOString(),
+      user_id: currentUser.id, slot: slot, data: snap,
+      player_name: snap.playerName || '', world_genre: snap.worldGenre || '',
+      level: snap.stats?.level || 1, updated_at: new Date().toISOString(),
     });
-  } catch(e) { /* silent */ }
+  } catch(e) {}
 }
 async function cloudLoad(slot) {
   if (!hasCloud()) return null;
@@ -2298,15 +2304,15 @@ function toast(msg, type) {
 
 // ═══════════════════ EVENT HANDLERS ═══════════════════
 document.addEventListener('DOMContentLoaded', async () => {
-  // Check Supabase auth session
-  await checkSession();
+  // Init local identity
+  initIdentity();
 
   // Auth enter key handlers
   document.getElementById('auth-email').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') signIn();
+    if (e.key === 'Enter') handleSignIn();
   });
   document.getElementById('auth-password').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') signIn();
+    if (e.key === 'Enter') handleSignIn();
   });
 
   // Command input
