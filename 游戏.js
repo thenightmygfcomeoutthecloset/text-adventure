@@ -59,10 +59,11 @@ async function localRegister(input, password) {
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
-      var id = { id: makeId(), email: display, supabaseId: data.user.id, createdAt: new Date().toISOString() };
+      var suid = data.user.id;
+      var id = { id: suid, email: display, createdAt: new Date().toISOString() };
       if (data.session) {
         saveIdentity(id);
-        currentUser = { id: id.id, email: id.email };
+        currentUser = { id: suid, email: display };
         updateAuthUI();
         closeLoginModal();
         document.getElementById('auth-email').value = '';
@@ -109,9 +110,10 @@ async function localSignIn(input, password) {
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
-      var id = { id: makeId(), email: display, supabaseId: data.user.id, createdAt: data.user.created_at || new Date().toISOString() };
+      var suid = data.user.id;
+      var id = { id: suid, email: display, createdAt: data.user.created_at || new Date().toISOString() };
       saveIdentity(id);
-      currentUser = { id: id.id, email: id.email };
+      currentUser = { id: suid, email: display };
       updateAuthUI();
       closeLoginModal();
       document.getElementById('auth-email').value = '';
