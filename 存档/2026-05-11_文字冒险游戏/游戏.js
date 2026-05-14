@@ -1,17 +1,29 @@
 // ═══════════════════ SUPABASE INIT ═══════════════════
 const SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let supabase = null;
+try {
+  if (window.supabase) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+} catch(e) { supabase = null; }
 
 // ═══════════════════ AUTH FUNCTIONS ═══════════════════
 let currentUser = null;
 
+function hasCloud() { return supabase && currentUser; }
+
 async function checkSession() {
-  const { data } = await supabase.auth.getSession();
-  currentUser = data.session?.user || null;
-  updateAuthUI();
+  if (!supabase) { updateAuthUI(); return; }
+  try {
+    const { data } = await supabase.auth.getSession();
+    currentUser = data.session?.user || null;
+    updateAuthUI();
+  } catch(e) { currentUser = null; updateAuthUI(); }
 }
 function updateAuthUI() {
+  const authSection = document.getElementById('auth-section');
+  if (!supabase && authSection) { authSection.style.display = 'none'; return; }
   const loggedOut = document.getElementById('auth-logged-out');
   const loggedIn = document.getElementById('auth-logged-in');
   const emailEl = document.getElementById('auth-user-email');
@@ -25,6 +37,7 @@ function updateAuthUI() {
   }
 }
 async function signIn() {
+  if (!supabase) { toast('云端服务不可用', 'error'); return; }
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
   if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
@@ -44,6 +57,7 @@ async function signIn() {
   refreshTitleButtons();
 }
 async function signUp() {
+  if (!supabase) { toast('云端服务不可用', 'error'); return; }
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
   if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
@@ -68,7 +82,7 @@ async function signUp() {
   refreshTitleButtons();
 }
 async function signOut() {
-  await supabase.auth.signOut();
+  if (supabase) await supabase.auth.signOut();
   currentUser = null;
   updateAuthUI();
   toast('已登出');
@@ -80,35 +94,37 @@ function refreshTitleButtons() {
 
 // ═══════════════════ CLOUD SAVE HELPERS ═══════════════════
 async function cloudSave(slot) {
-  if (!currentUser) return;
-  const snap = serializeState();
-  const { error } = await supabase.from('saves').upsert({
-    user_id: currentUser.id,
-    slot: slot,
-    data: snap,
-    player_name: snap.playerName || '',
-    world_genre: snap.worldGenre || '',
-    level: snap.stats?.level || 1,
-    updated_at: new Date().toISOString(),
-  });
-  if (error) console.warn('Cloud save failed:', error.message);
+  if (!hasCloud()) return;
+  try {
+    const snap = serializeState();
+    await supabase.from('saves').upsert({
+      user_id: currentUser.id,
+      slot: slot,
+      data: snap,
+      player_name: snap.playerName || '',
+      world_genre: snap.worldGenre || '',
+      level: snap.stats?.level || 1,
+      updated_at: new Date().toISOString(),
+    });
+  } catch(e) { /* silent */ }
 }
 async function cloudLoad(slot) {
-  if (!currentUser) return null;
-  const { data, error } = await supabase.from('saves').select('data').eq('user_id', currentUser.id).eq('slot', slot).maybeSingle();
-  if (error || !data) return null;
-  return data.data;
+  if (!hasCloud()) return null;
+  try {
+    const { data } = await supabase.from('saves').select('data').eq('user_id', currentUser.id).eq('slot', slot).maybeSingle();
+    return data?.data || null;
+  } catch(e) { return null; }
 }
 async function cloudDelete(slot) {
-  if (!currentUser) return;
-  const { error } = await supabase.from('saves').delete().eq('user_id', currentUser.id).eq('slot', slot);
-  if (error) console.warn('Cloud delete failed:', error.message);
+  if (!hasCloud()) return;
+  try { await supabase.from('saves').delete().eq('user_id', currentUser.id).eq('slot', slot); } catch(e) {}
 }
 async function cloudListSlots() {
-  if (!currentUser) return [];
-  const { data, error } = await supabase.from('saves').select('slot, player_name, world_genre, level, updated_at').eq('user_id', currentUser.id).order('slot');
-  if (error) return [];
-  return data || [];
+  if (!hasCloud()) return [];
+  try {
+    const { data } = await supabase.from('saves').select('slot, player_name, world_genre, level, updated_at').eq('user_id', currentUser.id).order('slot');
+    return data || [];
+  } catch(e) { return []; }
 }
 
 function getWorldStatType(genre) {
@@ -239,18 +255,7 @@ function deserializeState(save) {
 function saveState() {
   const snap = serializeState();
   localStorage.setItem('text_adventure_save', JSON.stringify(snap));
-  // Sync auto-save to cloud (slot -1 = auto)
-  if (currentUser) {
-    supabase.from('saves').upsert({
-      user_id: currentUser.id,
-      slot: -1,
-      data: snap,
-      player_name: snap.playerName || '',
-      world_genre: snap.worldGenre || '',
-      level: snap.stats?.level || 1,
-      updated_at: new Date().toISOString(),
-    }).then(({ error }) => { if (error) console.warn('Auto-save sync failed:', error.message); });
-  }
+  cloudSave(-1); // fire-and-forget cloud sync
 }
 
 function loadSave() {

@@ -6,6 +6,13 @@
 <title>异界卷 · 文字冒险</title>
 <link rel="stylesheet" href="样式.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// CDN fallback: if Supabase SDK fails to load, disable cloud features but keep game working
+if (typeof window.supabase === 'undefined') {
+  window.supabase = null;
+  console.warn('Supabase SDK not loaded, cloud features disabled');
+}
+</script>
 </head>
 <body>
 
