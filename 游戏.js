@@ -1459,18 +1459,44 @@ function updateGameStateFromResponse(response) {
   if (state.fullHistory.length % 5 === 0) state.worldMemory = summarizeForMemory(response);
 }
 
-function daredevilAction() {
+async function daredevilAction() {
   if (!state.gameStarted) return;
-  const category = getWorldStatType(state.worldGenre);
-  const actions = DAREDEVIL_ACTIONS[category] || DAREDEVIL_ACTIONS.fantasy;
-  const action = actions[Math.floor(Math.random() * actions.length)];
   const input = document.getElementById('command-input');
-  if (input) {
-    input.value = action;
-    input.focus();
-    state.recklessCount = (state.recklessCount || 0) + 1;
-    state._recentReckless = (state._recentReckless || 0) + 1;
+  if (!input) return;
+
+  const btn = document.getElementById('btn-daredevil');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 酝酿作死……'; }
+
+  const systemPrompt = buildSystemPrompt();
+  const askPrompt = '请根据当前的情境、角色状态、以及最近发生的事件，为角色构思1个"作死"性质的行动——即冒险、挑衅、不计后果、或戏剧性冲动行为。要求：1) 6-25字，具体可执行 2) 基于当前上下文，符合当前场景与角色处境，让人觉得合理但又确实疯狂 3) 风格应与世界观一致 4) 不打破第四面墙。请严格按照格式回复：[作死行动：具体行动描述]，不要输出其他任何内容。';
+
+  try {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...state.apiHistory.filter(m => m.role !== 'system').slice(-8),
+      { role: 'user', content: askPrompt },
+    ];
+    const response = await callAPI(messages);
+    const match = response.match(/\[作死行动[：:]\s*([^\]]+)\]/);
+    if (match) {
+      input.value = match[1].trim();
+    } else {
+      // Fallback to static list
+      const category = getWorldStatType(state.worldGenre);
+      const actions = DAREDEVIL_ACTIONS[category] || DAREDEVIL_ACTIONS.fantasy;
+      input.value = actions[Math.floor(Math.random() * actions.length)];
+    }
+  } catch (err) {
+    // Fallback to static list on error
+    const category = getWorldStatType(state.worldGenre);
+    const actions = DAREDEVIL_ACTIONS[category] || DAREDEVIL_ACTIONS.fantasy;
+    input.value = actions[Math.floor(Math.random() * actions.length)];
   }
+
+  state.recklessCount = (state.recklessCount || 0) + 1;
+  state._recentReckless = (state._recentReckless || 0) + 1;
+  input.focus();
+  if (btn) { btn.disabled = false; btn.textContent = '💀 作死一下'; }
 }
 
 async function requestSuggestions() {
@@ -1532,6 +1558,54 @@ function renderSuggestions(suggestions) {
     });
     container.appendChild(btn);
   });
+
+  const moreBtn = document.createElement('button');
+  moreBtn.className = 'suggestion-btn suggestion-more-btn';
+  moreBtn.textContent = '🔄 更多';
+  moreBtn.addEventListener('click', () => requestMoreSuggestions());
+  container.appendChild(moreBtn);
+
+  const regenerateBtn = document.createElement('button');
+  regenerateBtn.className = 'suggestion-btn suggestion-more-btn';
+  regenerateBtn.textContent = '♻️ 重新生成';
+  regenerateBtn.addEventListener('click', () => {
+    resetSuggestions();
+    requestSuggestions();
+  });
+  container.appendChild(regenerateBtn);
+}
+
+async function requestMoreSuggestions() {
+  const container = document.getElementById('suggestion-buttons');
+  if (!container || !state.gameStarted) return;
+
+  // Remove the meta buttons before fetching new suggestions
+  const existingBtns = container.querySelectorAll('.suggestion-more-btn');
+  existingBtns.forEach(b => b.remove());
+
+  const systemPrompt = buildSystemPrompt();
+  const askPrompt = '请根据当前的情境，为角色提供3个新的、与之前不同的合理行动建议。要求：1) 每个建议6-15字，具体可执行 2) 三个建议方向各异 3) 不与已展示的建议重复 4) 不打破第四面墙。请严格按照格式回复：[行动建议：选项1 | 选项2 | 选项3]，不要输出其他任何内容。';
+
+  try {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...state.apiHistory.filter(m => m.role !== 'system').slice(-8),
+      { role: 'user', content: askPrompt },
+    ];
+    const response = await callAPI(messages);
+    const sugPattern = /\[行动建议[：:]\s*([^\]]+)\]/;
+    const sugMatch = response.match(sugPattern);
+    if (sugMatch) {
+      const suggestions = sugMatch[1].split(/[|｜]/).map(s => s.trim()).filter(s => s);
+      if (suggestions.length > 0) {
+        renderSuggestions(suggestions);
+        return;
+      }
+    }
+    renderSuggestions(['观察周围的环境', '寻找值得探索的方向', '检查身上的物品与状态']);
+  } catch (err) {
+    toast('获取建议失败：' + err.message, 'error');
+  }
 }
 
 function resetSuggestions() {
