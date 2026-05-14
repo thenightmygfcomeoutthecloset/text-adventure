@@ -131,9 +131,20 @@ function refreshTitleButtons() {
 const SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
 let supabase = null;
-try {
-  if (window.supabase) supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-} catch(e) { supabase = null; }
+
+function initSupabase() {
+  try {
+    if (typeof window.supabase !== 'undefined' && window.supabase && window.supabase.createClient) {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      console.log('[Supabase] Client initialized');
+    } else {
+      console.log('[Supabase] SDK not loaded, cloud sync unavailable');
+    }
+  } catch(e) {
+    console.warn('[Supabase] Init failed:', e.message);
+    supabase = null;
+  }
+}
 
 function hasCloud() { return supabase && currentUser; }
 
@@ -2345,6 +2356,9 @@ function toast(msg, type) {
 
 // ═══════════════════ EVENT HANDLERS ═══════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  // Init Supabase first (defer script now loaded)
+  initSupabase();
+
   // Init local identity
   initIdentity();
 
