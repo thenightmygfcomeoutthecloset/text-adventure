@@ -1,3 +1,115 @@
+// ═══════════════════ SUPABASE INIT ═══════════════════
+const SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ═══════════════════ AUTH FUNCTIONS ═══════════════════
+let currentUser = null;
+
+async function checkSession() {
+  const { data } = await supabase.auth.getSession();
+  currentUser = data.session?.user || null;
+  updateAuthUI();
+}
+function updateAuthUI() {
+  const loggedOut = document.getElementById('auth-logged-out');
+  const loggedIn = document.getElementById('auth-logged-in');
+  const emailEl = document.getElementById('auth-user-email');
+  if (currentUser) {
+    if (loggedOut) loggedOut.classList.add('hidden');
+    if (loggedIn) loggedIn.classList.remove('hidden');
+    if (emailEl) emailEl.textContent = currentUser.email;
+  } else {
+    if (loggedOut) loggedOut.classList.remove('hidden');
+    if (loggedIn) loggedIn.classList.add('hidden');
+  }
+}
+async function signIn() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value.trim();
+  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
+  const btnSignin = document.getElementById('btn-signin');
+  const btnSignup = document.getElementById('btn-signup');
+  if (btnSignin) btnSignin.disabled = true;
+  if (btnSignup) btnSignup.disabled = true;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) { toast('登录失败：' + error.message, 'error'); if (btnSignin) btnSignin.disabled = false; if (btnSignup) btnSignup.disabled = false; return; }
+  currentUser = data.user;
+  updateAuthUI();
+  toast('欢迎回来，' + currentUser.email + ' ✨');
+  if (btnSignin) btnSignin.disabled = false;
+  if (btnSignup) btnSignup.disabled = false;
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
+  refreshTitleButtons();
+}
+async function signUp() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value.trim();
+  if (!email || !password) { toast('请输入邮箱和密码', 'error'); return; }
+  if (password.length < 6) { toast('密码至少6位', 'error'); return; }
+  const btnSignin = document.getElementById('btn-signin');
+  const btnSignup = document.getElementById('btn-signup');
+  if (btnSignin) btnSignin.disabled = true;
+  if (btnSignup) btnSignup.disabled = true;
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) { toast('注册失败：' + error.message, 'error'); if (btnSignin) btnSignin.disabled = false; if (btnSignup) btnSignup.disabled = false; return; }
+  if (data.user) {
+    currentUser = data.user;
+    updateAuthUI();
+    toast('注册成功，已自动登录 ✨');
+    document.getElementById('auth-email').value = '';
+    document.getElementById('auth-password').value = '';
+  } else {
+    toast('注册邮件已发送，请查收邮箱确认');
+  }
+  if (btnSignin) btnSignin.disabled = false;
+  if (btnSignup) btnSignup.disabled = false;
+  refreshTitleButtons();
+}
+async function signOut() {
+  await supabase.auth.signOut();
+  currentUser = null;
+  updateAuthUI();
+  toast('已登出');
+  refreshTitleButtons();
+}
+function refreshTitleButtons() {
+  showScreen('title');
+}
+
+// ═══════════════════ CLOUD SAVE HELPERS ═══════════════════
+async function cloudSave(slot) {
+  if (!currentUser) return;
+  const snap = serializeState();
+  const { error } = await supabase.from('saves').upsert({
+    user_id: currentUser.id,
+    slot: slot,
+    data: snap,
+    player_name: snap.playerName || '',
+    world_genre: snap.worldGenre || '',
+    level: snap.stats?.level || 1,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) console.warn('Cloud save failed:', error.message);
+}
+async function cloudLoad(slot) {
+  if (!currentUser) return null;
+  const { data, error } = await supabase.from('saves').select('data').eq('user_id', currentUser.id).eq('slot', slot).maybeSingle();
+  if (error || !data) return null;
+  return data.data;
+}
+async function cloudDelete(slot) {
+  if (!currentUser) return;
+  const { error } = await supabase.from('saves').delete().eq('user_id', currentUser.id).eq('slot', slot);
+  if (error) console.warn('Cloud delete failed:', error.message);
+}
+async function cloudListSlots() {
+  if (!currentUser) return [];
+  const { data, error } = await supabase.from('saves').select('slot, player_name, world_genre, level, updated_at').eq('user_id', currentUser.id).order('slot');
+  if (error) return [];
+  return data || [];
+}
 
 function getWorldStatType(genre) {
   const fantasy = ['奇幻仙侠','传统玄幻','武侠江湖','仙侠修真','西幻史诗','都市修真','玄幻言情','古言脑洞','蒸汽朋克','无限流','穿越小说'];
@@ -125,7 +237,20 @@ function deserializeState(save) {
 }
 
 function saveState() {
-  localStorage.setItem('text_adventure_save', JSON.stringify(serializeState()));
+  const snap = serializeState();
+  localStorage.setItem('text_adventure_save', JSON.stringify(snap));
+  // Sync auto-save to cloud (slot -1 = auto)
+  if (currentUser) {
+    supabase.from('saves').upsert({
+      user_id: currentUser.id,
+      slot: -1,
+      data: snap,
+      player_name: snap.playerName || '',
+      world_genre: snap.worldGenre || '',
+      level: snap.stats?.level || 1,
+      updated_at: new Date().toISOString(),
+    }).then(({ error }) => { if (error) console.warn('Auto-save sync failed:', error.message); });
+  }
 }
 
 function loadSave() {
@@ -751,8 +876,22 @@ async function startNewGame() {
   if (daredevilBtn) daredevilBtn.disabled = false;
 }
 
-function continueGame() {
-  if (!loadSave()) {
+async function continueGame() {
+  let loaded = false;
+
+  // Try cloud auto-save first
+  if (currentUser) {
+    const cloudData = await cloudLoad(-1);
+    if (cloudData) {
+      deserializeState(cloudData);
+      loaded = cloudData.gameStarted === true;
+    }
+  }
+
+  // Fallback to local
+  if (!loaded) loaded = loadSave();
+
+  if (!loaded) {
     toast('没有找到存档', 'error');
     return;
   }
@@ -1245,7 +1384,7 @@ function restartGame() {
   startNewGame();
 }
 
-function loadLastSave() {
+async function loadLastSave() {
   const input = document.getElementById('command-input');
   const btn = document.getElementById('btn-send');
   if (input) { input.disabled = false; input.placeholder = '你要做什么？'; }
@@ -1254,16 +1393,47 @@ function loadLastSave() {
   const dBtn = document.getElementById('btn-daredevil');
   if (sBtn) sBtn.style.display = '';
   if (dBtn) dBtn.style.display = '';
-  if (loadSave()) {
+
+  let loaded = false;
+  // Try cloud auto-save first
+  if (currentUser) {
+    const cloudData = await cloudLoad(-1);
+    if (cloudData && cloudData.gameStarted) {
+      deserializeState(cloudData);
+      loaded = true;
+    }
+  }
+  // Fallback local
+  if (!loaded) loaded = loadSave();
+
+  if (loaded) {
     showScreen('game');
     renderFullHistory();
     resetSuggestions();
     document.getElementById('command-input').focus();
   } else {
     // Try loading from slot 0
-    const raw = localStorage.getItem('text_adventure_slot_0');
-    if (raw) {
-      loadSlot(0);
+    let slot0Loaded = false;
+    if (currentUser) {
+      const cloudData = await cloudLoad(0);
+      if (cloudData) {
+        deserializeState(cloudData);
+        slot0Loaded = true;
+      }
+    }
+    if (!slot0Loaded) {
+      const raw = localStorage.getItem('text_adventure_slot_0');
+      if (raw) {
+        try { deserializeState(JSON.parse(raw)); slot0Loaded = true; } catch(e) {}
+      }
+    }
+    if (slot0Loaded) {
+      closeOverlay();
+      showScreen('game');
+      renderFullHistory();
+      resetSuggestions();
+      updateStatsBar();
+      document.getElementById('command-input').focus();
     } else {
       toast('没有找到存档', 'error');
       showScreen('title');
@@ -1976,16 +2146,27 @@ function saveGame() {
   showSaveManager();
 }
 
-function saveToSlot(n) {
+async function saveToSlot(n) {
   if (!state.gameStarted) return;
   localStorage.setItem('text_adventure_slot_' + n, JSON.stringify(serializeState()));
-  toast('已保存到槽位 ' + (n + 1) + ' ✓');
+  await cloudSave(n);
+  toast('已保存到槽位 ' + (n + 1) + (currentUser ? ' ☁️' : '') + ' ✓');
   showSaveManager();
 }
 
-function loadSlot(n) {
-  const raw = localStorage.getItem('text_adventure_slot_' + n);
+async function loadSlot(n) {
+  let raw = null;
+
+  // Try cloud first if logged in
+  if (currentUser) {
+    const cloudData = await cloudLoad(n);
+    if (cloudData) raw = JSON.stringify(cloudData);
+  }
+
+  // Fallback to local
+  if (!raw) raw = localStorage.getItem('text_adventure_slot_' + n);
   if (!raw) { toast('槽位为空', 'error'); return; }
+
   try {
     const save = JSON.parse(raw);
     deserializeState(save);
@@ -1995,38 +2176,60 @@ function loadSlot(n) {
     resetSuggestions();
     updateStatsBar();
     document.getElementById('command-input').focus();
-    toast('已读取槽位 ' + (n + 1));
+    toast('已读取槽位 ' + (n + 1) + (currentUser ? ' ☁️' : ''));
   } catch(e) {
     toast('存档损坏', 'error');
   }
 }
 
-function deleteSlot(n) {
+async function deleteSlot(n) {
   localStorage.removeItem('text_adventure_slot_' + n);
+  await cloudDelete(n);
   toast('已删除槽位 ' + (n + 1));
   showSaveManager();
 }
 
-function getSlotInfo(n) {
-  const raw = localStorage.getItem('text_adventure_slot_' + n);
-  if (!raw) return null;
-  try {
-    const s = JSON.parse(raw);
-    return {
-      playerName: s.playerName || '???',
-      worldGenre: s.worldGenre || '???',
-      level: (s.stats && s.stats.level) ? s.stats.level : 1,
-      savedAt: s.savedAt || '',
-      activeFrequency: s.activeFrequency || 'male',
-    };
-  } catch(e) { return null; }
+async function getSlotInfo(n) {
+  // Merge cloud + local: prefer cloud if newer, else local
+  let info = null;
+  if (currentUser) {
+    const slots = await cloudListSlots();
+    const cs = slots.find(s => s.slot === n);
+    if (cs) {
+      info = {
+        playerName: cs.player_name || '???',
+        worldGenre: cs.world_genre || '???',
+        level: cs.level || 1,
+        savedAt: cs.updated_at || '',
+        source: 'cloud',
+      };
+    }
+  }
+  if (!info) {
+    const raw = localStorage.getItem('text_adventure_slot_' + n);
+    if (!raw) return null;
+    try {
+      const s = JSON.parse(raw);
+      info = {
+        playerName: s.playerName || '???',
+        worldGenre: s.worldGenre || '???',
+        level: (s.stats && s.stats.level) ? s.stats.level : 1,
+        savedAt: s.savedAt || '',
+        source: 'local',
+      };
+    } catch(e) { return null; }
+  }
+  return info;
 }
 
-function showSaveManager() {
+async function showSaveManager() {
   const overlay = document.getElementById('overlay');
   const content = document.getElementById('overlay-content');
 
-  let html = '<h3>💾 存档管理</h3>';
+  let html = '<h3>💾 存档管理';
+  if (currentUser) html += ' <span style="color:var(--accent-bright);font-size:11px;font-family:var(--font-ui)">☁️ 已同步</span>';
+  html += '</h3>';
+
   const asRaw = localStorage.getItem('text_adventure_save');
   if (asRaw) {
     try {
@@ -2042,9 +2245,9 @@ function showSaveManager() {
 
   html += '<div class="save-slots">';
   for (let i = 0; i < SAVE_SLOTS; i++) {
-    const info = getSlotInfo(i);
+    const info = await getSlotInfo(i);
     html += '<div class="save-slot' + (info ? '' : ' empty') + '">';
-    html += '<div class="slot-num">槽位 ' + (i + 1) + '</div>';
+    html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : '') + '</div>';
     if (info) {
       const d = new Date(info.savedAt);
       const ds = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
@@ -2089,7 +2292,18 @@ function toast(msg, type) {
 }
 
 // ═══════════════════ EVENT HANDLERS ═══════════════════
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Check Supabase auth session
+  await checkSession();
+
+  // Auth enter key handlers
+  document.getElementById('auth-email').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') signIn();
+  });
+  document.getElementById('auth-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') signIn();
+  });
+
   // Command input
   const cmdInput = document.getElementById('command-input');
   const btnSend = document.getElementById('btn-send');
@@ -2127,7 +2341,28 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch(e) {}
   }
-  // Show load button if any manual slots exist
+
+  // If logged in, check cloud saves for continue/load buttons
+  if (currentUser) {
+    try {
+      const cloudSlots = await cloudListSlots();
+      if (cloudSlots.length > 0) {
+        document.getElementById('btn-load-slot').style.display = '';
+        // Check if cloud auto-save exists for continue
+        const hasCloudAuto = cloudSlots.some(s => s.slot === -1);
+        if (hasCloudAuto && !hasSave) {
+          const savedKey = localStorage.getItem('text_adventure_apikey');
+          if (savedKey) {
+            state.apiKey = savedKey;
+            document.getElementById('api-key-input').value = savedKey;
+          }
+          document.getElementById('btn-continue').style.display = '';
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Show load button if any local manual slots exist
   for (let i = 0; i < SAVE_SLOTS; i++) {
     if (localStorage.getItem('text_adventure_slot_' + i)) {
       document.getElementById('btn-load-slot').style.display = '';

@@ -468,7 +468,7 @@ const RISKY_KEYWORDS = [
   '赌博','下注','赌','冒险','搏命',
 ];
 const DICE_TIER_NAMES = { critFail: '大失败', fail: '失败', success: '成功', greatSuccess: '优秀成功', critSuccess: '大成功' };
-const SAVE_SLOTS = 5;
+const SAVE_SLOTS = 10;
 
 // ═══════════════════ WINDOW EXPORTS ═══════════════════
 window.DEFAULT_STATS = DEFAULT_STATS;
