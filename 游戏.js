@@ -59,6 +59,7 @@ async function localRegister(input, password) {
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
+      var oldIdentity = loadIdentity(); // save old ID before overwriting
       var suid = data.user.id;
       var id = { id: suid, email: display, createdAt: new Date().toISOString() };
       if (data.session) {
@@ -70,6 +71,7 @@ async function localRegister(input, password) {
         document.getElementById('auth-password').value = '';
         toast('注册成功，「' + display + '」已登录 ☁️');
         refreshTitleButtons();
+        if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
         return;
       } else {
         toast('已发送确认邮件到 ' + display + '，请查收后登录 📧');
@@ -110,6 +112,7 @@ async function localSignIn(input, password) {
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
+      var oldIdentity = loadIdentity(); // save old ID before overwriting
       var suid = data.user.id;
       var id = { id: suid, email: display, createdAt: data.user.created_at || new Date().toISOString() };
       saveIdentity(id);
@@ -120,6 +123,7 @@ async function localSignIn(input, password) {
       document.getElementById('auth-password').value = '';
       toast('欢迎回来，' + display + ' ☁️');
       refreshTitleButtons();
+      if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
       return;
     }
     if (error) {
@@ -239,6 +243,58 @@ async function cloudSignIn(account, password) {
 }
 
 function hasCloud() { return currentUser; }
+
+async function migrateSaves(oldId, newId) {
+  if (!oldId || oldId === newId) return;
+  // Migrate cloud saves: copy files from old ID to new ID
+  try {
+    var resp = await fetch(SUPABASE_URL + '/storage/v1/object/list/saves', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefix: oldId + '/', limit: 50, offset: 0 })
+    });
+    if (!resp.ok) return;
+    var files = await resp.json();
+    for (var i = 0; i < files.length; i++) {
+      var oldPath = oldId + '/' + files[i].name;
+      var newPath = newId + '/' + files[i].name;
+      // Copy: download then upload
+      var dl = await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + oldPath, {
+        headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY }
+      });
+      if (dl.ok) {
+        var blob = await dl.blob();
+        await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + newPath, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+          body: blob
+        });
+      }
+    }
+    console.log('[Migrate] Cloud saves migrated: ' + files.length + ' files from ' + oldId + ' to ' + newId);
+  } catch(e) { console.warn('[Migrate] Cloud migration failed:', e); }
+
+  // Migrate local saves: re-save under new ID
+  try {
+    for (var s = 1; s <= 10; s++) {
+      var oldKey = 'text_adventure_slot_' + s;
+      var saveData = localStorage.getItem(oldKey);
+      if (saveData) {
+        var newKey = 'text_adventure_slot_' + s;
+        // Local saves use the same key format regardless of user ID,
+        // so they're already available. Just need to re-upload to cloud.
+        var snap = JSON.parse(saveData);
+        var path = newId + '/slot_' + s + '.json';
+        await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify(snap)
+        });
+      }
+    }
+    console.log('[Migrate] Local saves uploaded to cloud under new ID');
+  } catch(e) { console.warn('[Migrate] Local migration failed:', e); }
+}
 
 async function cloudSave(slot) {
   if (!hasCloud()) return;
