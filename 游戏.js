@@ -153,7 +153,7 @@ function closeLoginModal() {
   document.getElementById('auth-password').value = '';
 }
 function handleSignIn() {
-  const email = document.getElementById('auth-email').value.trim();
+  const input = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
   localSignIn(input, password);
   document.getElementById('auth-email').value = '';
@@ -161,7 +161,7 @@ function handleSignIn() {
   closeLoginModal();
 }
 function handleRegister() {
-  const email = document.getElementById('auth-email').value.trim();
+  const input = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
   localRegister(input, password);
   document.getElementById('auth-email').value = '';
