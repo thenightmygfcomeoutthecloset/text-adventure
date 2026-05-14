@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>后台 · 异界卷</title>
+<style>
+  :root {
+    --bg: #0b0a10; --bg-panel: #121118; --bg-input: #181720;
+    --text: #c4b898; --text-bright: #e8dfcc; --text-dim: #6b6558;
+    --accent: #8b7528; --accent-bright: #d4af37;
+    --border: #25231c; --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    min-height: 100vh;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+
+  /* Login */
+  .lock-screen {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh;
+  }
+  .lock-box {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 40px 32px; width: 90%; max-width: 360px;
+    text-align: center;
+  }
+  .lock-box h1 { font-size: 24px; font-weight: 400; letter-spacing: 4px; margin-bottom: 24px; }
+  .lock-box input {
+    width: 100%; padding: 10px 14px; background: var(--bg-input);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 14px; text-align: center;
+  }
+  .lock-box button {
+    margin-top: 12px; width: 100%; padding: 10px;
+    background: var(--accent); color: var(--text-bright);
+    border: none; border-radius: var(--radius); font-size: 14px; cursor: pointer;
+    letter-spacing: 2px;
+  }
+  .lock-box button:hover { background: var(--accent-bright); color: #fff; }
+  .lock-error { color: #c47a7a; font-size: 12px; margin-top: 8px; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+  }
+  .header h1 { font-size: 20px; font-weight: 400; letter-spacing: 3px; }
+  .header-actions { display: flex; gap: 8px; }
+  .header-actions button {
+    padding: 6px 14px; background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius); cursor: pointer; font-size: 12px;
+  }
+  .header-actions button:hover { border-color: var(--accent); }
+
+  /* Stats */
+  .stats-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat-card {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px; flex: 1; min-width: 120px;
+    text-align: center;
+  }
+  .stat-card .num { font-size: 28px; color: var(--accent-bright); font-weight: 300; }
+  .stat-card .label { font-size: 11px; color: var(--text-dim); margin-top: 4px; letter-spacing: 1px; }
+
+  /* Table */
+  .user-table { width: 100%; border-collapse: collapse; }
+  .user-table th, .user-table td {
+    padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .user-table th { color: var(--text-dim); font-weight: 400; font-size: 11px; letter-spacing: 1px; }
+  .user-table tr:hover td { background: rgba(139,117,40,0.04); }
+  .user-table .mono { font-family: "SF Mono", "Consolas", monospace; font-size: 11px; color: var(--text-dim); }
+  .user-table button {
+    padding: 3px 10px; background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; cursor: pointer; font-size: 11px;
+  }
+  .user-table button:hover { border-color: var(--accent); color: var(--accent-bright); }
+
+  /* Detail panel */
+  .detail-panel {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-top: 16px;
+    max-height: 500px; overflow-y: auto; display: none;
+  }
+  .detail-panel.open { display: block; }
+  .detail-panel pre {
+    font-size: 11px; color: var(--text); white-space: pre-wrap; word-break: break-all;
+    font-family: "SF Mono", "Consolas", monospace;
+  }
+  .detail-panel h3 { font-weight: 400; margin-bottom: 12px; color: var(--accent-bright); letter-spacing: 2px; }
+
+  .empty { text-align: center; padding: 60px 0; color: var(--text-dim); font-size: 14px; }
+  .loading { text-align: center; padding: 40px 0; color: var(--text-dim); }
+  .toast {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-panel); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 100; opacity: 0; transition: opacity .3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- Lock Screen -->
+<div id="lock-screen" class="lock-screen">
+  <div class="lock-box">
+    <h1>异 界 卷</h1>
+    <input type="password" id="admin-password" placeholder="管理密码" autocomplete="off">
+    <button onclick="unlock()">进 入 后 台</button>
+    <div class="lock-error" id="lock-error"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" style="display:none">
+  <div class="container">
+    <div class="header">
+      <h1>后 台 管 理</h1>
+      <div class="header-actions">
+        <button onclick="loadData()">🔄 刷新</button>
+        <button onclick="lock()">🚪 退出</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="stats-row"></div>
+
+    <div style="margin-bottom:8px;font-size:12px;color:var(--text-dim);letter-spacing:1px">▍用户存档列表</div>
+    <div id="user-list"></div>
+
+    <div class="detail-panel" id="detail-panel"></div>
+  </div>
+</div>
+
+<script src="supabase-sdk.js" defer></script>
+<script>
+const SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
+const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5ZHZsYWhkeWNxdHRsamVzb2t3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODczOTAwNywiZXhwIjoyMDk0MzE1MDA3fQ.Fr4jYGyya3jmE3Xe2hvP5K8D7icWcS6h3nooy3kxHOo';
+const ADMIN_PASSWORD = 'admin888';
+let supabase = null;
+let unlocked = false;
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ── Auth ──
+function unlock() {
+  const pw = document.getElementById('admin-password').value;
+  if (pw === ADMIN_PASSWORD) {
+    unlocked = true;
+    document.getElementById('lock-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('lock-error').textContent = '';
+    initSupabase();
+  } else {
+    document.getElementById('lock-error').textContent = '密码错误';
+  }
+}
+
+function lock() {
+  unlocked = false;
+  document.getElementById('lock-screen').style.display = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('admin-password').value = '';
+}
+
+// Enter key
+document.getElementById('admin-password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') unlock();
+});
+
+// ── Supabase Init ──
+function initSupabase() {
+  if (typeof window.supabase !== 'undefined' && window.supabase && window.supabase.createClient) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SERVICE_KEY);
+    console.log('[Admin] Supabase ready');
+    loadData();
+  } else {
+    setTimeout(initSupabase, 300);
+  }
+}
+
+// ── Data Loading ──
+async function loadData() {
+  if (!unlocked) return;
+  document.getElementById('user-list').innerHTML = '<div class="loading">加载中……</div>';
+  document.getElementById('detail-panel').classList.remove('open');
+
+  try {
+    // List all top-level "folders" (user IDs) in the saves bucket
+    const { data: files, error } = await supabase.storage.from('saves').list('', {
+      limit: 500, offset: 0, sortBy: { column: 'created_at', order: 'desc' }
+    });
+
+    if (error) {
+      document.getElementById('user-list').innerHTML = '<div class="empty">加载失败: ' + error.message + '</div>';
+      return;
+    }
+
+    renderUserList(files || []);
+  } catch(e) {
+    document.getElementById('user-list').innerHTML = '<div class="empty">请求失败: ' + e.message + '</div>';
+  }
+}
+
+// ── Render ──
+function renderUserList(files) {
+  // Group files by user ID (first path segment)
+  const users = {};
+  for (const f of files) {
+    if (!f.name) continue;
+    const parts = f.name.split('/');
+    const userId = parts[0];
+    if (!userId) continue;
+    if (!users[userId]) users[userId] = { id: userId, slots: [], totalSize: 0, lastModified: null };
+    users[userId].slots.push(f);
+    users[userId].totalSize += f.metadata?.size || 0;
+    const mtime = f.metadata?.lastModified || f.created_at;
+    if (mtime && (!users[userId].lastModified || mtime > users[userId].lastModified)) {
+      users[userId].lastModified = mtime;
+    }
+  }
+
+  const userList = Object.values(users);
+  userList.sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || ''));
+
+  // Stats
+  const totalSlots = userList.reduce((s, u) => s + u.slots.length, 0);
+  const totalSize = userList.reduce((s, u) => s + u.totalSize, 0);
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card"><div class="num">${userList.length}</div><div class="label">用户总数</div></div>
+    <div class="stat-card"><div class="num">${totalSlots}</div><div class="label">存档总数</div></div>
+    <div class="stat-card"><div class="num">${formatSize(totalSize)}</div><div class="label">存储用量</div></div>
+  `;
+
+  if (userList.length === 0) {
+    document.getElementById('user-list').innerHTML = '<div class="empty">暂无用户存档</div>';
+    return;
+  }
+
+  let html = `<table class="user-table">
+    <thead><tr><th>用户 ID</th><th>存档数</th><th>大小</th><th>最后活跃</th><th>操作</th></tr></thead><tbody>`;
+  for (const u of userList) {
+    html += `<tr>
+      <td class="mono">${esc(u.id)}</td>
+      <td>${u.slots.length}</td>
+      <td>${formatSize(u.totalSize)}</td>
+      <td>${u.lastModified ? new Date(u.lastModified).toLocaleString('zh-CN') : '-'}</td>
+      <td><button onclick="viewUser('${esc(u.id)}')">查看详情</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('user-list').innerHTML = html;
+}
+
+async function viewUser(userId) {
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('open');
+  panel.innerHTML = '<div class="loading">加载中……</div>';
+
+  try {
+    const { data: files, error } = await supabase.storage.from('saves').list(userId, {
+      limit: 50, offset: 0, sortBy: { column: 'created_at', order: 'desc' }
+    });
+    if (error) { panel.innerHTML = '<h3>错误</h3><pre>' + esc(error.message) + '</pre>'; return; }
+
+    let html = '<h3>用户: ' + esc(userId) + '</h3>';
+    html += '<table class="user-table"><thead><tr><th>存档文件</th><th>大小</th><th>时间</th><th>操作</th></tr></thead><tbody>';
+
+    for (const f of (files || [])) {
+      const name = f.name;
+      const size = f.metadata?.size || 0;
+      const time = f.created_at ? new Date(f.created_at).toLocaleString('zh-CN') : '-';
+      html += `<tr>
+        <td>${esc(name)}</td>
+        <td>${formatSize(size)}</td>
+        <td>${time}</td>
+        <td><button onclick="downloadSave('${esc(userId)}','${esc(name)}')">下载</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    panel.innerHTML = html;
+  } catch(e) {
+    panel.innerHTML = '<h3>错误</h3><pre>' + esc(e.message) + '</pre>';
+  }
+}
+
+async function downloadSave(userId, filename) {
+  try {
+    const { data, error } = await supabase.storage.from('saves').download(userId + '/' + filename);
+    if (error) { toast('下载失败: ' + error.message); return; }
+    const text = await data.text();
+    const obj = JSON.parse(text);
+    const panel = document.getElementById('detail-panel');
+    // Show a summary
+    const snap = obj;
+    panel.innerHTML = `<h3>${esc(filename)} — ${esc(userId)}</h3>
+      <table class="user-table" style="margin-bottom:12px">
+        <tr><td>角色名</td><td>${esc(snap.playerName || '-')}</td></tr>
+        <tr><td>性别</td><td>${esc(snap.playerGender || '-')}</td></tr>
+        <tr><td>世界</td><td>${esc(snap.genre || '-')}</td></tr>
+        <tr><td>位置</td><td>${esc(snap.location || '-')}</td></tr>
+        <tr><td>剧情步数</td><td>${snap.stepCount || 0}</td></tr>
+        <tr><td>统计</td><td><pre style="margin:0;font-size:11px">${esc(JSON.stringify(snap.stats || {}, null, 2))}</pre></td></tr>
+        <tr><td>物品</td><td>${(snap.inventory || []).length} 件</td></tr>
+        <tr><td>羁绊</td><td>${(snap.relationships || []).length} 个</td></tr>
+        <tr><td>成就</td><td>${(snap.achievements || []).length} 个</td></tr>
+      </table>
+      <details><summary style="cursor:pointer;color:var(--text-dim);font-size:12px">完整 JSON</summary>
+      <pre style="margin-top:8px">${esc(JSON.stringify(obj, null, 2))}</pre></details>`;
+  } catch(e) {
+    toast('解析失败: ' + e.message);
+  }
+}
+
+// ── Helpers ──
+function formatSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
