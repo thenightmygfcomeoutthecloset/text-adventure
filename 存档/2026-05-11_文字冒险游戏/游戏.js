@@ -75,12 +75,22 @@ function updateAuthUI() {
   }
 }
 
+function showLoginModal() {
+  document.getElementById('login-modal').classList.remove('hidden');
+  document.getElementById('auth-email').focus();
+}
+function closeLoginModal() {
+  document.getElementById('login-modal').classList.add('hidden');
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
+}
 function handleSignIn() {
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value.trim();
   localSignIn(email, password);
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
+  closeLoginModal();
 }
 function handleRegister() {
   const email = document.getElementById('auth-email').value.trim();
@@ -88,6 +98,7 @@ function handleRegister() {
   localRegister(email, password);
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
+  if (currentUser) closeLoginModal();
 }
 function refreshTitleButtons() {
   showScreen('title');
@@ -2307,12 +2318,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Init local identity
   initIdentity();
 
-  // Auth enter key handlers
+  // Auth enter key handlers (for login modal)
   document.getElementById('auth-email').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleSignIn();
+    else if (e.key === 'Escape') closeLoginModal();
   });
   document.getElementById('auth-password').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleSignIn();
+    if (e.key === 'Enter') handleRegister();
+    else if (e.key === 'Escape') closeLoginModal();
   });
 
   // Command input

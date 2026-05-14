@@ -220,87 +220,36 @@ body::before {
 
 /* ═══════════════════ AUTH SECTION ═══════════════════ */
 .auth-section {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   width: 100%;
   max-width: 360px;
 }
 
+.auth-buttons-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.auth-buttons-row button {
+  flex: 1;
+  padding: 11px 16px;
+  font-size: 13px;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
 .btn-guest {
   background: var(--accent-a08);
   border: 1px solid var(--accent);
   color: var(--accent-bright);
-  padding: 11px 32px;
-  font-size: 14px;
   font-family: var(--font-ui);
-  letter-spacing: 4px;
   cursor: pointer;
   border-radius: var(--radius);
   transition: all var(--transition-fast);
-  width: 100%;
   box-sizing: border-box;
 }
 .btn-guest:hover {
   background: rgba(212,175,55,0.15);
-  box-shadow: 0 0 20px var(--accent-glow);
-}
-
-.auth-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  margin: 4px 0;
-}
-.auth-divider::before, .auth-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-.auth-divider span {
-  color: var(--text-dim);
-  font-size: 10px;
-  font-family: var(--font-ui);
-  white-space: nowrap;
-}
-
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-}
-
-.auth-input {
-  width: 100%;
-  max-width: 280px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 10px 16px;
-  font-size: 13px;
-  font-family: var(--font-ui);
-  border-radius: var(--radius);
-  text-align: center;
-  outline: none;
-  transition: border-color var(--transition-fast);
-  box-sizing: border-box;
-}
-.auth-input:focus { border-color: var(--accent); }
-
-.auth-buttons {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-.auth-buttons button {
-  padding: 8px 24px;
-  font-size: 13px;
-  letter-spacing: 3px;
-}
-.auth-buttons button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  box-shadow: 0 0 16px var(--accent-glow);
 }
 
 .auth-status {
@@ -308,15 +257,14 @@ body::before {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 8px 14px;
   background: rgba(139,117,40,0.08);
   border: 1px solid rgba(139,117,40,0.2);
   border-radius: var(--radius);
   width: 100%;
-  max-width: 320px;
   box-sizing: border-box;
 }
-.auth-user-icon { font-size: 16px; }
+.auth-user-icon { font-size: 15px; }
 .auth-user-email {
   color: var(--accent-bright);
   font-size: 12px;
@@ -333,7 +281,98 @@ body::before {
   flex-shrink: 0;
 }
 
-/* Single-input auth form when logged out */
+/* ═══════════════════ LOGIN MODAL ═══════════════════ */
+.login-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-modal.hidden { display: none; }
+.login-modal-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+.login-modal-panel {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px 28px 24px;
+  width: 90%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: modalIn 0.25s ease;
+  z-index: 1;
+}
+.login-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color var(--transition-fast);
+}
+.login-modal-close:hover { color: var(--text); }
+.login-modal-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  color: var(--text);
+  letter-spacing: 3px;
+  font-weight: 400;
+}
+.login-modal-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+}
+
+.auth-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 11px 16px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  border-radius: var(--radius);
+  text-align: center;
+  outline: none;
+  transition: border-color var(--transition-fast);
+  box-sizing: border-box;
+}
+.auth-input:focus { border-color: var(--accent); }
+
+.auth-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+.auth-buttons button {
+  flex: 1;
+  padding: 10px 20px;
+  font-size: 13px;
+  letter-spacing: 3px;
+}
+.auth-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 #auth-logged-in.hidden { display: none; }
 #auth-logged-out.hidden { display: none; }
 
