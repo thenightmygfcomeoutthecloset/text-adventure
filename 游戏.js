@@ -1,11 +1,11 @@
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
-let currentUser = null; // { id, email }
+let currentUser = null; // { id, email, displayName }
 
 function makeId() { return 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
 function hashPassword(pw) { let h = 0; for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h + pw.charCodeAt(i)) | 0; } return 'h_' + Math.abs(h).toString(36); }
 
 function saveIdentity(id) {
-  const identity = { id: id.id, email: id.email, createdAt: id.createdAt || new Date().toISOString() };
+  var identity = { id: id.id, email: id.email, displayName: id.displayName || id.email, createdAt: id.createdAt || new Date().toISOString() };
   if (id.passwordHash) identity.passwordHash = id.passwordHash;
   localStorage.setItem('text_adventure_identity', JSON.stringify(identity));
 }
@@ -13,15 +13,28 @@ function loadIdentity() {
   try { return JSON.parse(localStorage.getItem('text_adventure_identity')); } catch(e) { return null; }
 }
 function initIdentity() {
-  const id = loadIdentity();
-  if (id) { currentUser = { id: id.id, email: id.email }; }
+  var id = loadIdentity();
+  if (id) { currentUser = { id: id.id, email: id.email, displayName: id.displayName || id.email }; }
   updateAuthUI();
 }
 
+function changeDisplayName() {
+  if (!currentUser) return;
+  var name = prompt('输入新用户名', currentUser.displayName || currentUser.email);
+  if (!name || !name.trim()) return;
+  name = name.trim().substring(0, 20);
+  currentUser.displayName = name;
+  var id = loadIdentity();
+  if (id) { id.displayName = name; saveIdentity(id); }
+  updateAuthUI();
+  toast('用户名已更新 ✨');
+}
+
 function guestLogin() {
-  const id = { id: makeId(), email: '游客_' + makeId().slice(-4), createdAt: new Date().toISOString() };
+  var name = '游客_' + makeId().slice(-4);
+  var id = { id: makeId(), email: name, displayName: name, createdAt: new Date().toISOString() };
   saveIdentity(id);
-  currentUser = { id: id.id, email: id.email };
+  currentUser = { id: id.id, email: id.email, displayName: name };
   updateAuthUI();
   toast('以游客身份进入异界 ✨');
   refreshTitleButtons();
@@ -59,12 +72,13 @@ async function localRegister(input, password) {
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
-      var oldIdentity = loadIdentity(); // save old ID before overwriting
+      var oldIdentity = loadIdentity();
       var suid = data.user.id;
-      var id = { id: suid, email: display, createdAt: new Date().toISOString() };
+      var nickname = norm.type === 'email' ? display.split('@')[0] : display;
+      var id = { id: suid, email: display, displayName: nickname, createdAt: new Date().toISOString() };
       if (data.session) {
         saveIdentity(id);
-        currentUser = { id: suid, email: display };
+        currentUser = { id: suid, email: display, displayName: nickname };
         updateAuthUI();
         closeLoginModal();
         document.getElementById('auth-email').value = '';
@@ -89,9 +103,11 @@ async function localRegister(input, password) {
   if (existing && existing.email === display && existing.passwordHash) {
     toast('该账号已注册，请直接登录', 'error'); return;
   }
-  var id = { id: makeId(), email: display, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
+  var isPhone = norm.type === 'phone';
+  var nickname = isPhone ? display : display.split('@')[0];
+  var id = { id: makeId(), email: display, displayName: nickname || display, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
   saveIdentity(id);
-  currentUser = { id: id.id, email: id.email };
+  currentUser = { id: id.id, email: id.email, displayName: nickname || display };
   updateAuthUI();
   toast('注册成功（仅本设备），「' + display + '」已登录 💻');
   closeLoginModal();
@@ -112,11 +128,12 @@ async function localSignIn(input, password) {
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
-      var oldIdentity = loadIdentity(); // save old ID before overwriting
+      var oldIdentity = loadIdentity();
       var suid = data.user.id;
-      var id = { id: suid, email: display, createdAt: data.user.created_at || new Date().toISOString() };
+      var nickname = norm.type === 'email' ? display.split('@')[0] : display;
+      var id = { id: suid, email: display, displayName: nickname, createdAt: data.user.created_at || new Date().toISOString() };
       saveIdentity(id);
-      currentUser = { id: suid, email: display };
+      currentUser = { id: suid, email: display, displayName: nickname };
       updateAuthUI();
       closeLoginModal();
       document.getElementById('auth-email').value = '';
@@ -141,7 +158,7 @@ async function localSignIn(input, password) {
   var localId = loadIdentity();
   if (!localId || localId.email !== display) { toast('账号未注册', 'error'); return; }
   if (localId.passwordHash !== hashPassword(password)) { toast('密码错误', 'error'); return; }
-  currentUser = { id: localId.id, email: localId.email };
+  currentUser = { id: localId.id, email: localId.email, displayName: localId.displayName || localId.email };
   updateAuthUI();
   closeLoginModal();
   document.getElementById('auth-email').value = '';
@@ -158,13 +175,18 @@ function signOut() {
 }
 
 function updateAuthUI() {
-  const loggedOut = document.getElementById('auth-logged-out');
-  const loggedIn = document.getElementById('auth-logged-in');
-  const emailEl = document.getElementById('auth-user-email');
+  var loggedOut = document.getElementById('auth-logged-out');
+  var loggedIn = document.getElementById('auth-logged-in');
+  var emailEl = document.getElementById('auth-user-email');
   if (currentUser) {
     if (loggedOut) loggedOut.classList.add('hidden');
     if (loggedIn) loggedIn.classList.remove('hidden');
-    if (emailEl) emailEl.textContent = currentUser.email;
+    if (emailEl) {
+      emailEl.textContent = currentUser.displayName || currentUser.email;
+      emailEl.title = '账号: ' + currentUser.email + '\n点击修改用户名';
+      emailEl.style.cursor = 'pointer';
+      emailEl.onclick = changeDisplayName;
+    }
   } else {
     if (loggedOut) loggedOut.classList.remove('hidden');
     if (loggedIn) loggedIn.classList.add('hidden');
