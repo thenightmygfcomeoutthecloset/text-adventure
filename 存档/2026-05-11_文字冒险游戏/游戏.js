@@ -53,9 +53,9 @@ async function localRegister(input, password) {
   var account = norm.account;
   var display = norm.display;
 
-  // 1) Try Supabase cloud registration first (cross-device)
-  if (supabase) {
-    var result = await withTimeout(supabase.auth.signUp({ email: account, password: password }), 8000).catch(function(e) { return { data: null, error: e }; });
+  // 1) Try cloud registration first (cross-device)
+  if (true) {
+    var result = await withTimeout(cloudSignUp(account, password), 8000).catch(function(e) { return { data: null, error: e }; });
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
@@ -103,9 +103,9 @@ async function localSignIn(input, password) {
   var account = norm.account;
   var display = norm.display;
 
-  // 1) Try Supabase cloud login first (cross-device)
-  if (supabase) {
-    var result = await withTimeout(supabase.auth.signInWithPassword({ email: account, password: password }), 8000).catch(function(e) { return { data: null, error: e }; });
+  // 1) Try cloud login first (cross-device)
+  if (true) {
+    var result = await withTimeout(cloudSignIn(account, password), 8000).catch(function(e) { return { data: null, error: e }; });
     var data = result.data;
     var error = result.error;
     if (!error && data.user) {
@@ -199,61 +199,100 @@ function refreshTitleButtons() {
   showScreen('title');
 }
 
-// ═══════════════════ OPTIONAL SUPABASE CLOUD SYNC ═══════════════════
-const SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
-let supabase = null;
+// ═══════════════════ OPTIONAL SUPABASE CLOUD SYNC (direct fetch, no SDK) ═══════════════════
+var SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
+var SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
+var SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5ZHZsYWhkeWNxdHRsamVzb2t3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODczOTAwNywiZXhwIjoyMDk0MzE1MDA3fQ.Fr4jYGyya3jmE3Xe2hvP5K8D7icWcS6h3nooy3kxHOo';
 
-function initSupabase() {
-  try {
-    if (typeof window.supabase !== 'undefined' && window.supabase && window.supabase.createClient) {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      console.log('[Supabase] Client initialized');
-    } else {
-      console.log('[Supabase] SDK not loaded, cloud sync unavailable');
-    }
-  } catch(e) {
-    console.warn('[Supabase] Init failed:', e.message);
-    supabase = null;
-  }
+function cloudAuthHeaders() {
+  return { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
 }
 
-function hasCloud() { return supabase && currentUser; }
+async function cloudSignUp(account, password) {
+  var resp = await fetch(SUPABASE_URL + '/auth/v1/signup', {
+    method: 'POST',
+    headers: cloudAuthHeaders(),
+    body: JSON.stringify({ email: account, password: password })
+  });
+  if (!resp.ok) {
+    var err = await resp.json().catch(function(){ return { msg: 'HTTP ' + resp.status }; });
+    return { data: null, error: { message: err.msg || err.message || ('HTTP ' + resp.status) } };
+  }
+  var data = await resp.json();
+  return { data: { user: data.user || data, session: data.session || (data.access_token ? data : null) }, error: null };
+}
+
+async function cloudSignIn(account, password) {
+  var resp = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: cloudAuthHeaders(),
+    body: JSON.stringify({ email: account, password: password })
+  });
+  if (!resp.ok) {
+    var err = await resp.json().catch(function(){ return { error_description: 'HTTP ' + resp.status }; });
+    return { data: null, error: { message: err.error_description || err.msg || ('HTTP ' + resp.status) } };
+  }
+  var data = await resp.json();
+  return { data: { user: data.user || { id: data.user_id || 'u_' + account, email: account }, session: data }, error: null };
+}
+
+function hasCloud() { return currentUser; }
 
 async function cloudSave(slot) {
   if (!hasCloud()) return;
   try {
-    const snap = serializeState();
-    const path = currentUser.id + '/slot_' + slot + '.json';
-    const blob = new Blob([JSON.stringify(snap)], {type: 'application/json'});
-    await supabase.storage.from('saves').upload(path, blob, {upsert: true, contentType: 'application/json'});
+    var snap = serializeState();
+    var path = currentUser.id + '/slot_' + slot + '.json';
+    await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(snap)
+    });
   } catch(e) {}
 }
+
 async function cloudLoad(slot) {
   if (!hasCloud()) return null;
   try {
-    const path = currentUser.id + '/slot_' + slot + '.json';
-    const { data, error } = await supabase.storage.from('saves').download(path);
-    if (error || !data) return null;
-    return JSON.parse(await data.text());
+    var path = currentUser.id + '/slot_' + slot + '.json';
+    var resp = await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY }
+    });
+    if (!resp.ok) return null;
+    return await resp.json();
   } catch(e) { return null; }
 }
+
 async function cloudDelete(slot) {
   if (!hasCloud()) return;
   try {
-    const path = currentUser.id + '/slot_' + slot + '.json';
-    await supabase.storage.from('saves').remove([path]);
+    var path = currentUser.id + '/slot_' + slot + '.json';
+    await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY }
+    });
   } catch(e) {}
 }
+
 async function cloudListSlots() {
   if (!hasCloud()) return [];
   try {
-    const { data } = await supabase.storage.from('saves').list(currentUser.id, {search: 'slot_'});
-    if (!data) return [];
-    return data.filter(f => f.name.startsWith('slot_')).map(f => {
-      const slot = parseInt(f.name.replace('slot_', '').replace('.json', ''));
-      return { slot, player_name: '', world_genre: '', level: 1, updated_at: f.updated_at || f.created_at || '' };
+    var resp = await fetch(SUPABASE_URL + '/storage/v1/object/list/saves', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'apikey': SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefix: currentUser.id + '/', limit: 50, offset: 0 })
     });
+    if (!resp.ok) return [];
+    var data = await resp.json();
+    var slots = [];
+    for (var i = 0; i < data.length; i++) {
+      var name = data[i].name;
+      var match = name.match(/slot_(\d+)\.json$/);
+      if (match) {
+        slots.push({ slot: parseInt(match[1]), player_name: '', world_genre: '', level: 1, updated_at: data[i].created_at || '' });
+      }
+    }
+    return slots;
   } catch(e) { return []; }
 }
 
@@ -2428,9 +2467,6 @@ function toast(msg, type) {
 
 // ═══════════════════ EVENT HANDLERS ═══════════════════
 document.addEventListener('DOMContentLoaded', async () => {
-  // Init Supabase first (defer script now loaded)
-  initSupabase();
-
   // Init local identity
   initIdentity();
 
