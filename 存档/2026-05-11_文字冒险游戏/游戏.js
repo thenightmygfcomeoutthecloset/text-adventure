@@ -135,35 +135,42 @@ try {
   if (window.supabase) supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 } catch(e) { supabase = null; }
 
-function hasCloud() { return supabase && currentUser && currentUser.email.indexOf('游客_') !== 0; }
+function hasCloud() { return supabase && currentUser; }
 
 async function cloudSave(slot) {
   if (!hasCloud()) return;
   try {
     const snap = serializeState();
-    await supabase.from('saves').upsert({
-      user_id: currentUser.id, slot: slot, data: snap,
-      player_name: snap.playerName || '', world_genre: snap.worldGenre || '',
-      level: snap.stats?.level || 1, updated_at: new Date().toISOString(),
-    });
+    const path = currentUser.id + '/slot_' + slot + '.json';
+    const blob = new Blob([JSON.stringify(snap)], {type: 'application/json'});
+    await supabase.storage.from('saves').upload(path, blob, {upsert: true, contentType: 'application/json'});
   } catch(e) {}
 }
 async function cloudLoad(slot) {
   if (!hasCloud()) return null;
   try {
-    const { data } = await supabase.from('saves').select('data').eq('user_id', currentUser.id).eq('slot', slot).maybeSingle();
-    return data?.data || null;
+    const path = currentUser.id + '/slot_' + slot + '.json';
+    const { data, error } = await supabase.storage.from('saves').download(path);
+    if (error || !data) return null;
+    return JSON.parse(await data.text());
   } catch(e) { return null; }
 }
 async function cloudDelete(slot) {
   if (!hasCloud()) return;
-  try { await supabase.from('saves').delete().eq('user_id', currentUser.id).eq('slot', slot); } catch(e) {}
+  try {
+    const path = currentUser.id + '/slot_' + slot + '.json';
+    await supabase.storage.from('saves').remove([path]);
+  } catch(e) {}
 }
 async function cloudListSlots() {
   if (!hasCloud()) return [];
   try {
-    const { data } = await supabase.from('saves').select('slot, player_name, world_genre, level, updated_at').eq('user_id', currentUser.id).order('slot');
-    return data || [];
+    const { data } = await supabase.storage.from('saves').list(currentUser.id, {search: 'slot_'});
+    if (!data) return [];
+    return data.filter(f => f.name.startsWith('slot_')).map(f => {
+      const slot = parseInt(f.name.replace('slot_', '').replace('.json', ''));
+      return { slot, player_name: '', world_genre: '', level: 1, updated_at: f.updated_at || f.created_at || '' };
+    });
   } catch(e) { return []; }
 }
 
