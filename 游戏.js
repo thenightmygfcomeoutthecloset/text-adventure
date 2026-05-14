@@ -724,6 +724,11 @@ async function startNewGame() {
     { role: 'user', content: initMessage },
   ];
 
+  const suggestBtn = document.getElementById('btn-suggest');
+  const daredevilBtn = document.getElementById('btn-daredevil');
+  if (suggestBtn) { suggestBtn.disabled = true; suggestBtn.textContent = '⏳ 世界生成中……'; }
+  if (daredevilBtn) daredevilBtn.disabled = true;
+
   try {
     const response = await callAPI(state.apiHistory, (chunk) => {
       // Streaming not needed for first message but we support it
@@ -741,6 +746,9 @@ async function startNewGame() {
     narrativeArea.innerHTML = '<div class="narrative-entry"><div class="world-response" style="color:#c47a7a;">世界之门暂时无法打开……请检查 API 密钥是否正确。</div></div>';
     console.error(err);
   }
+
+  if (suggestBtn) { suggestBtn.disabled = false; suggestBtn.textContent = '💡 行动建议'; }
+  if (daredevilBtn) daredevilBtn.disabled = false;
 }
 
 function continueGame() {
@@ -1461,6 +1469,7 @@ function updateGameStateFromResponse(response) {
 
 async function daredevilAction() {
   if (!state.gameStarted) return;
+  if (guardBusy()) return;
   const input = document.getElementById('command-input');
   if (!input) return;
 
@@ -1504,6 +1513,7 @@ async function requestSuggestions() {
   const container = document.getElementById('suggestion-buttons');
   if (!btn || !container) return;
   if (!state.gameStarted) return;
+  if (guardBusy()) return;
 
   btn.disabled = true;
   btn.textContent = '⏳ 思考中……';
@@ -1558,6 +1568,64 @@ function renderSuggestions(suggestions) {
     });
     container.appendChild(btn);
   });
+  addMetaButtons(container);
+}
+
+async function requestMoreSuggestions() {
+  const container = document.getElementById('suggestion-buttons');
+  if (!container || !state.gameStarted) return;
+  if (guardBusy()) return;
+
+  // Remove meta buttons temporarily
+  const existingBtns = container.querySelectorAll('.suggestion-more-btn');
+  existingBtns.forEach(b => b.remove());
+
+  const systemPrompt = buildSystemPrompt();
+  const askPrompt = '请根据当前的情境，为角色提供3个新的、与之前不同的合理行动建议。要求：1) 每个建议6-15字，具体可执行 2) 三个建议方向各异 3) 不与已展示的建议重复 4) 不打破第四面墙。请严格按照格式回复：[行动建议：选项1 | 选项2 | 选项3]，不要输出其他任何内容。';
+
+  try {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...state.apiHistory.filter(m => m.role !== 'system').slice(-8),
+      { role: 'user', content: askPrompt },
+    ];
+    const response = await callAPI(messages);
+    const sugPattern = /\[行动建议[：:]\s*([^\]]+)\]/;
+    const sugMatch = response.match(sugPattern);
+    if (sugMatch) {
+      const newSuggestions = sugMatch[1].split(/[|｜]/).map(s => s.trim()).filter(s => s);
+      if (newSuggestions.length > 0) {
+        appendSuggestions(newSuggestions);
+        return;
+      }
+    }
+    appendSuggestions(['观察周围的环境', '寻找值得探索的方向', '检查身上的物品与状态']);
+  } catch (err) {
+    toast('获取建议失败：' + err.message, 'error');
+    // Re-add meta buttons on failure
+    addMetaButtons(container);
+  }
+}
+
+function appendSuggestions(newSuggestions) {
+  const container = document.getElementById('suggestion-buttons');
+  if (!container) return;
+  newSuggestions.forEach(sug => {
+    const btn = document.createElement('button');
+    btn.className = 'suggestion-btn';
+    btn.textContent = sug;
+    btn.addEventListener('click', () => {
+      document.getElementById('command-input').value = sug;
+      sendCommand();
+    });
+    container.appendChild(btn);
+  });
+  addMetaButtons(container);
+}
+
+function addMetaButtons(container) {
+  // Remove stale meta buttons first
+  container.querySelectorAll('.suggestion-more-btn').forEach(b => b.remove());
 
   const moreBtn = document.createElement('button');
   moreBtn.className = 'suggestion-btn suggestion-more-btn';
@@ -1575,37 +1643,12 @@ function renderSuggestions(suggestions) {
   container.appendChild(regenerateBtn);
 }
 
-async function requestMoreSuggestions() {
-  const container = document.getElementById('suggestion-buttons');
-  if (!container || !state.gameStarted) return;
-
-  // Remove the meta buttons before fetching new suggestions
-  const existingBtns = container.querySelectorAll('.suggestion-more-btn');
-  existingBtns.forEach(b => b.remove());
-
-  const systemPrompt = buildSystemPrompt();
-  const askPrompt = '请根据当前的情境，为角色提供3个新的、与之前不同的合理行动建议。要求：1) 每个建议6-15字，具体可执行 2) 三个建议方向各异 3) 不与已展示的建议重复 4) 不打破第四面墙。请严格按照格式回复：[行动建议：选项1 | 选项2 | 选项3]，不要输出其他任何内容。';
-
-  try {
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...state.apiHistory.filter(m => m.role !== 'system').slice(-8),
-      { role: 'user', content: askPrompt },
-    ];
-    const response = await callAPI(messages);
-    const sugPattern = /\[行动建议[：:]\s*([^\]]+)\]/;
-    const sugMatch = response.match(sugPattern);
-    if (sugMatch) {
-      const suggestions = sugMatch[1].split(/[|｜]/).map(s => s.trim()).filter(s => s);
-      if (suggestions.length > 0) {
-        renderSuggestions(suggestions);
-        return;
-      }
-    }
-    renderSuggestions(['观察周围的环境', '寻找值得探索的方向', '检查身上的物品与状态']);
-  } catch (err) {
-    toast('获取建议失败：' + err.message, 'error');
+function guardBusy() {
+  if (_activeAbortController) {
+    toast('世界正在回应中，请稍候……', 'error');
+    return true;
   }
+  return false;
 }
 
 function resetSuggestions() {
