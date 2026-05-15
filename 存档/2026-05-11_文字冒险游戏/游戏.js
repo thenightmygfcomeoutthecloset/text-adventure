@@ -1,13 +1,30 @@
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
-let currentUser = null; // { id, email, displayName }
-var supabaseSession = null; // session with access_token from cloud auth
+// currentUser.type: 'guest' | 'local' | 'cloud'
+let currentUser = null; // { id, email, displayName, type }
+var supabaseSession = null; // { access_token, refresh_token, expires_at, user }
 
 function makeId() { return 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
 function hashPassword(pw) { let h = 0; for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h + pw.charCodeAt(i)) | 0; } return 'h_' + Math.abs(h).toString(36); }
 
+// ── Cloud session helpers ──
+function hasCloud() {
+  return !!(supabaseSession && supabaseSession.access_token);
+}
+function getCloudUser() {
+  if (!hasCloud()) return null;
+  if (supabaseSession.user) return supabaseSession.user;
+  // Decode JWT payload to extract user info
+  try {
+    var payload = supabaseSession.access_token.split('.')[1];
+    var decoded = JSON.parse(atob(payload));
+    return { id: decoded.sub, email: decoded.email };
+  } catch(e) { return null; }
+}
+
 function saveIdentity(id) {
-  var identity = { id: id.id, email: id.email, displayName: id.displayName || id.email, createdAt: id.createdAt || new Date().toISOString() };
-  if (id.passwordHash) identity.passwordHash = id.passwordHash;
+  var identity = { id: id.id, email: id.email, displayName: id.displayName || id.email, type: id.type || 'guest', createdAt: id.createdAt || new Date().toISOString() };
+  // Only local accounts store passwordHash for verification
+  if (id.type === 'local' && id.passwordHash) identity.passwordHash = id.passwordHash;
   localStorage.setItem('text_adventure_identity', JSON.stringify(identity));
 }
 function loadIdentity() {
@@ -15,10 +32,50 @@ function loadIdentity() {
 }
 function initIdentity() {
   var id = loadIdentity();
-  if (id) { currentUser = { id: id.id, email: id.email, displayName: id.displayName || id.email }; }
+  if (id) { currentUser = { id: id.id, email: id.email, displayName: id.displayName || id.email, type: id.type || 'guest' }; }
   var savedSession = localStorage.getItem('text_adventure_session');
-  if (savedSession) { try { supabaseSession = JSON.parse(savedSession); } catch(e) { supabaseSession = null; } }
+  if (savedSession) {
+    try {
+      supabaseSession = JSON.parse(savedSession);
+      // Validate session hasn't expired
+      if (supabaseSession && supabaseSession.expires_at) {
+        var now = Math.floor(Date.now() / 1000);
+        if (now >= supabaseSession.expires_at) {
+          // Try refresh
+          refreshSession().catch(function() {
+            supabaseSession = null;
+            localStorage.removeItem('text_adventure_session');
+          });
+        }
+      }
+    } catch(e) { supabaseSession = null; }
+  }
   updateAuthUI();
+}
+
+async function refreshSession() {
+  if (!supabaseSession || !supabaseSession.refresh_token) {
+    supabaseSession = null;
+    localStorage.removeItem('text_adventure_session');
+    return;
+  }
+  try {
+    var resp = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: supabaseSession.refresh_token })
+    });
+    if (!resp.ok) {
+      supabaseSession = null;
+      localStorage.removeItem('text_adventure_session');
+      return;
+    }
+    var data = await resp.json();
+    if (data.access_token) supabaseSession = data;
+    localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
+  } catch(e) {
+    // Network error — keep existing session, it might still be valid
+  }
 }
 
 function changeDisplayName() {
@@ -35,11 +92,13 @@ function changeDisplayName() {
 
 function guestLogin() {
   var name = '游客_' + makeId().slice(-4);
-  var id = { id: makeId(), email: name, displayName: name, createdAt: new Date().toISOString() };
+  var id = { id: makeId(), email: name, displayName: name, type: 'guest', createdAt: new Date().toISOString() };
   saveIdentity(id);
-  currentUser = { id: id.id, email: id.email, displayName: name };
+  currentUser = { id: id.id, email: id.email, displayName: name, type: 'guest' };
+  supabaseSession = null;
+  localStorage.removeItem('text_adventure_session');
   updateAuthUI();
-  toast('以游客身份进入异界 ✨');
+  toast('当前为游客模式，存档仅保存在本机浏览器。');
   refreshTitleButtons();
 }
 
@@ -69,52 +128,45 @@ async function localRegister(input, password) {
   var account = norm.account;
   var display = norm.display;
 
-  // 1) Try cloud registration first (cross-device)
-  if (true) {
-    var result = await withTimeout(cloudSignUp(account, password), 8000).catch(function(e) { return { data: null, error: e }; });
-    var data = result.data;
-    var error = result.error;
-    if (!error && data.user) {
-      var oldIdentity = loadIdentity();
-      var suid = data.user.id;
-      var nickname = norm.type === 'email' ? display.split('@')[0] : display;
-      var id = { id: suid, email: display, displayName: nickname, createdAt: new Date().toISOString() };
-      if (data.session) {
-        saveIdentity(id);
-        currentUser = { id: suid, email: display, displayName: nickname };
-        updateAuthUI();
-        closeAuthModal();
-        toast('注册成功，「' + display + '」已登录 ☁️');
-        refreshTitleButtons();
-        if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
-        return;
-      } else {
-        toast('已发送确认邮件到 ' + display + '，请查收后登录 📧');
-        return;
-      }
+  // Try cloud registration first
+  var result = await withTimeout(cloudSignUp(account, password), 10000).catch(function(e) {
+    return { ok: false, error: '网络超时，请检查网络后重试' };
+  });
+  if (result.ok && result.data.user) {
+    var cloudUser = result.data.user;
+    var oldIdentity = loadIdentity();
+    var suid = cloudUser.id;
+    var nickname = norm.type === 'email' ? display.split('@')[0] : display;
+    var id = { id: suid, email: display, displayName: nickname, type: 'cloud', createdAt: new Date().toISOString() };
+    if (result.data.session) {
+      saveIdentity(id);
+      currentUser = { id: suid, email: display, displayName: nickname, type: 'cloud' };
+      updateAuthUI();
+      closeAuthModal();
+      toast('注册成功，「' + display + '」已登录 ☁️');
+      refreshTitleButtons();
+      refreshTitleCloudSaveButtons();
+      if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
+      return;
+    } else {
+      toast('已发送确认邮件到 ' + display + '，请查收后登录 📧');
+      closeAuthModal();
+      return;
     }
-    if (error && error.message && error.message.indexOf('already') !== -1) {
-      toast('该账号已注册，请直接登录', 'error'); return;
-    }
-    console.warn('[Auth] Supabase signUp failed, using local fallback:', error);
   }
 
-  // 2) Local fallback
-  var existing = loadIdentity();
-  if (existing && existing.email === display && existing.passwordHash) {
-    toast('该账号已注册，请直接登录', 'error'); return;
+  // Cloud signup failed — show error, DO NOT silently fall back to local
+  if (result.error) {
+    if (result.error.indexOf('already') !== -1 || result.error.indexOf('already registered') !== -1) {
+      toast('该账号已注册，请直接登录', 'error');
+    } else {
+      toast('云端注册失败：' + result.error, 'error');
+    }
+    return;
   }
-  var isPhone = norm.type === 'phone';
-  var nickname = isPhone ? display : display.split('@')[0];
-  var id = { id: makeId(), email: display, displayName: nickname || display, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
-  saveIdentity(id);
-  currentUser = { id: id.id, email: id.email, displayName: nickname || display };
-  updateAuthUI();
-  toast('注册成功（仅本设备），「' + display + '」已登录 💻');
-  closeLoginModal();
-  document.getElementById('auth-email').value = '';
-  document.getElementById('auth-password').value = '';
-  refreshTitleButtons();
+
+  // Only reach here if cloud returned no error but also no user (unexpected)
+  toast('云端注册失败，请稍后重试', 'error');
 }
 
 async function localSignIn(input, password) {
@@ -123,53 +175,63 @@ async function localSignIn(input, password) {
   var account = norm.account;
   var display = norm.display;
 
-  // 1) Try cloud login first (cross-device)
-  if (true) {
-    var result = await withTimeout(cloudSignIn(account, password), 8000).catch(function(e) { return { data: null, error: e }; });
-    var data = result.data;
-    var error = result.error;
-    if (!error && data.user) {
-      var oldIdentity = loadIdentity();
-      var suid = data.user.id;
-      var nickname = norm.type === 'email' ? display.split('@')[0] : display;
-      var id = { id: suid, email: display, displayName: nickname, createdAt: data.user.created_at || new Date().toISOString() };
-      saveIdentity(id);
-      currentUser = { id: suid, email: display, displayName: nickname };
-      updateAuthUI();
-      closeAuthModal();
-      toast('欢迎回来，' + display + ' ☁️');
-      refreshTitleButtons();
-      if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
-      return;
-    }
-    if (error) {
-      if (error.message && error.message.indexOf('Invalid login') !== -1) {
-        toast('账号或密码错误', 'error'); return;
-      }
-      if (error.message && error.message.indexOf('Email not confirmed') !== -1) {
-        toast('请先确认邮箱后再登录 📧', 'error'); return;
-      }
-      console.warn('[Auth] Supabase signIn failed, trying local:', error);
-    }
+  // 1) Try cloud login first
+  var result = await withTimeout(cloudSignIn(account, password), 10000).catch(function(e) {
+    return { ok: false, error: '网络超时，请检查网络后重试' };
+  });
+  if (result.ok && result.data.user) {
+    var cloudUser = result.data.user;
+    var oldIdentity = loadIdentity();
+    var suid = cloudUser.id;
+    var nickname = norm.type === 'email' ? display.split('@')[0] : display;
+    var id = { id: suid, email: display, displayName: nickname, type: 'cloud', createdAt: cloudUser.created_at || new Date().toISOString() };
+    saveIdentity(id);
+    currentUser = { id: suid, email: display, displayName: nickname, type: 'cloud' };
+    updateAuthUI();
+    closeAuthModal();
+    toast('已登录云端账号，可跨设备同步存档。');
+    refreshTitleButtons();
+    refreshTitleCloudSaveButtons();
+    if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
+    return;
   }
 
-  // 2) Local fallback
+  // 2) Cloud failed — try local account
   var localId = loadIdentity();
-  if (!localId || localId.email !== display) { toast('账号未注册', 'error'); return; }
-  if (localId.passwordHash !== hashPassword(password)) { toast('密码错误', 'error'); return; }
-  currentUser = { id: localId.id, email: localId.email, displayName: localId.displayName || localId.email };
-  updateAuthUI();
-  closeAuthModal();
-  toast('欢迎回来，' + display + ' 💻');
-  refreshTitleButtons();
+  if (localId && localId.email === display && localId.passwordHash === hashPassword(password)) {
+    currentUser = { id: localId.id, email: localId.email, displayName: localId.displayName || localId.email, type: localId.type || 'local' };
+    updateAuthUI();
+    closeAuthModal();
+    toast('当前为本地账号，存档不会跨设备同步。');
+    refreshTitleButtons();
+    return;
+  }
+
+  // 3) Both failed
+  if (result.error) {
+    toast('登录失败：' + result.error, 'error');
+  } else if (!localId || localId.email !== display) {
+    toast('账号未注册', 'error');
+  } else {
+    toast('密码错误', 'error');
+  }
 }
 
-function signOut() {
+async function signOut() {
+  // Call Supabase signOut if we have a session
+  if (supabaseSession && supabaseSession.access_token) {
+    try {
+      await fetch(SUPABASE_URL + '/auth/v1/logout', {
+        method: 'POST',
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + supabaseSession.access_token, 'Content-Type': 'application/json' }
+      });
+    } catch(e) { /* best-effort */ }
+  }
   currentUser = null;
   supabaseSession = null;
   localStorage.removeItem('text_adventure_session');
   updateAuthUI();
-  toast('已退出登录');
+  toast('已退出登录。存档仍保留在本机浏览器中。');
   refreshTitleButtons();
 }
 
@@ -181,8 +243,12 @@ function updateAuthUI() {
     if (loggedOut) loggedOut.classList.add('hidden');
     if (loggedIn) loggedIn.classList.remove('hidden');
     if (emailEl) {
-      emailEl.textContent = currentUser.displayName || currentUser.email;
-      emailEl.title = '账号: ' + currentUser.email + '\n点击修改用户名';
+      var typeLabel = '';
+      if (currentUser.type === 'cloud') typeLabel = ' ☁️云端';
+      else if (currentUser.type === 'guest') typeLabel = ' 👤游客';
+      else typeLabel = ' 💻本地';
+      emailEl.textContent = (currentUser.displayName || currentUser.email) + typeLabel;
+      emailEl.title = '账号: ' + currentUser.email + '\n类型: ' + (currentUser.type || '未知') + '\n点击修改用户名';
       emailEl.style.cursor = 'pointer';
       emailEl.onclick = changeDisplayName;
     }
@@ -232,168 +298,274 @@ function refreshTitleButtons() {
   showScreen('title');
 }
 
-// ═══════════════════ OPTIONAL SUPABASE CLOUD SYNC (direct fetch, no SDK) ═══════════════════
+var _cloudRefreshSeq = 0;
+
+async function refreshTitleCloudSaveButtons() {
+  if (!hasCloud()) return;
+  var cloudUser = getCloudUser();
+  if (!cloudUser || !cloudUser.id) return;
+  var seq = ++_cloudRefreshSeq;
+  var capturedUserId = cloudUser.id;
+
+  try {
+    var result = await cloudListSlots();
+    // Guard: user may have logged out or switched accounts during async
+    // Also guard: if another cloud refresh started after us, discard stale results
+    if (seq !== _cloudRefreshSeq) return;
+    if (!hasCloud()) return;
+    var currentCloudUser = getCloudUser();
+    if (!currentCloudUser || currentCloudUser.id !== capturedUserId) return;
+
+    if (!result.ok) {
+      console.warn('[Cloud] 云端存档检查失败：' + (result.error || '未知错误'));
+      return;
+    }
+
+    var slots = result.data || [];
+    if (slots.length === 0) return;
+
+    var hasAutoSave = slots.some(function(s) { return s.slot === AUTO_SAVE_SLOT; });
+
+    // "继续游戏" — show if cloud has auto-save AND no local save exists
+    var localRaw = localStorage.getItem('text_adventure_save');
+    var hasLocalSave = false;
+    if (localRaw) {
+      try {
+        var localSave = JSON.parse(localRaw);
+        hasLocalSave = localSave.gameStarted === true;
+      } catch(e) {}
+    }
+
+    if (hasAutoSave && !hasLocalSave) {
+      var savedKey = localStorage.getItem('text_adventure_apikey');
+      if (savedKey) {
+        var apiInput = document.getElementById('api-key-input');
+        if (apiInput && !apiInput.value) apiInput.value = savedKey;
+      }
+      var btnContinue = document.getElementById('btn-continue');
+      if (btnContinue) btnContinue.style.display = '';
+    }
+
+    // "读取存档" — show if any cloud slots exist
+    var btnLoadSlot = document.getElementById('btn-load-slot');
+    if (btnLoadSlot) btnLoadSlot.style.display = '';
+  } catch(e) {
+    if (seq !== _cloudRefreshSeq) return;
+    console.warn('[Cloud] 云端存档检查异常：' + (e.message || '未知错误'));
+  }
+}
+
+// ═══════════════════ SUPABASE CLOUD SYNC (Database-backed, no Storage) ═══════════════════
 var SUPABASE_URL = 'https://cydvlahdycqttljesokw.supabase.co';
 var SUPABASE_ANON_KEY = 'sb_publishable_7Mumb6XajwxrcUB9kNO1ow_Idx_Br_p';
 
+// ── HTTP helpers ──
 function cloudAuthHeaders() {
   return { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
 }
-
-function cloudStorageHeaders() {
-  var token = (supabaseSession && supabaseSession.access_token)
-    ? supabaseSession.access_token
-    : SUPABASE_ANON_KEY;
+function cloudDbHeaders() {
+  // Must have valid session for Database RLS to work
+  if (!supabaseSession || !supabaseSession.access_token) {
+    throw new Error('未登录云端账号');
+  }
   return {
-    'Authorization': 'Bearer ' + token,
     'apikey': SUPABASE_ANON_KEY,
+    'Authorization': 'Bearer ' + supabaseSession.access_token,
     'Content-Type': 'application/json'
   };
 }
 
+// ── Auth ──
 async function cloudSignUp(account, password) {
-  var resp = await fetch(SUPABASE_URL + '/auth/v1/signup', {
-    method: 'POST',
-    headers: cloudAuthHeaders(),
-    body: JSON.stringify({ email: account, password: password })
-  });
-  if (!resp.ok) {
-    var err = await resp.json().catch(function(){ return { msg: 'HTTP ' + resp.status }; });
-    return { data: null, error: { message: err.msg || err.message || ('HTTP ' + resp.status) } };
+  try {
+    var resp = await fetch(SUPABASE_URL + '/auth/v1/signup', {
+      method: 'POST',
+      headers: cloudAuthHeaders(),
+      body: JSON.stringify({ email: account, password: password })
+    });
+    var data = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) {
+      var msg = data.msg || data.message || ('HTTP ' + resp.status);
+      if (resp.status === 429) msg = '注册过于频繁，请稍后再试';
+      return { ok: false, error: msg };
+    }
+    if (data.session && data.session.access_token) {
+      supabaseSession = data.session;
+      localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
+    } else if (data.access_token) {
+      supabaseSession = data;
+      localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
+    }
+    return { ok: true, data: { user: data.user || data, session: data.session || (data.access_token ? data : null) } };
+  } catch(e) {
+    return { ok: false, error: '网络连接失败：' + (e.message || '未知错误') };
   }
-  var data = await resp.json();
-  if (data.session && data.session.access_token) { supabaseSession = data.session; }
-  else if (data.access_token) { supabaseSession = data; }
-  localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
-  return { data: { user: data.user || data, session: data.session || (data.access_token ? data : null) }, error: null };
 }
 
 async function cloudSignIn(account, password) {
-  var resp = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
-    method: 'POST',
-    headers: cloudAuthHeaders(),
-    body: JSON.stringify({ email: account, password: password })
-  });
-  if (!resp.ok) {
-    var err = await resp.json().catch(function(){ return { error_description: 'HTTP ' + resp.status }; });
-    return { data: null, error: { message: err.error_description || err.msg || ('HTTP ' + resp.status) } };
+  try {
+    var resp = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: cloudAuthHeaders(),
+      body: JSON.stringify({ email: account, password: password })
+    });
+    var data = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) {
+      var msg = data.error_description || data.msg || data.message || ('HTTP ' + resp.status);
+      return { ok: false, error: msg };
+    }
+    if (data.access_token) {
+      supabaseSession = data;
+      localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
+    }
+    return { ok: true, data: { user: data.user || { id: data.user_id || 'u_' + account, email: account }, session: data } };
+  } catch(e) {
+    return { ok: false, error: '网络连接失败：' + (e.message || '未知错误') };
   }
-  var data = await resp.json();
-  if (data.access_token) { supabaseSession = data; }
-  localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
-  return { data: { user: data.user || { id: data.user_id || 'u_' + account, email: account }, session: data }, error: null };
 }
 
-function hasCloud() { return currentUser; }
+// ── SAVE CRUD (Database-backed) ──
 
-async function migrateSaves(oldId, newId) {
-  if (!oldId || oldId === newId) return;
-  // Migrate cloud saves: copy files from old ID to new ID
-  try {
-    var resp = await fetch(SUPABASE_URL + '/storage/v1/object/list/saves', {
-      method: 'POST',
-      headers: cloudStorageHeaders(),
-      body: JSON.stringify({ prefix: oldId + '/', limit: 50, offset: 0 })
-    });
-    if (!resp.ok) return;
-    var files = await resp.json();
-    for (var i = 0; i < files.length; i++) {
-      var oldPath = oldId + '/' + files[i].name;
-      var newPath = newId + '/' + files[i].name;
-      // Copy: download then upload
-      var dl = await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + oldPath, {
-        headers: cloudStorageHeaders()
-      });
-      if (dl.ok) {
-        var blob = await dl.blob();
-        await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + newPath, {
-          method: 'POST',
-          headers: cloudStorageHeaders(),
-          body: blob
-        });
-      }
-    }
-    console.log('[Migrate] Cloud saves migrated: ' + files.length + ' files from ' + oldId + ' to ' + newId);
-  } catch(e) { console.warn('[Migrate] Cloud migration failed:', e); }
-
-  // Migrate local saves: re-save under new ID
-  try {
-    for (var s = 1; s <= 10; s++) {
-      var oldKey = 'text_adventure_slot_' + s;
-      var saveData = localStorage.getItem(oldKey);
-      if (saveData) {
-        var newKey = 'text_adventure_slot_' + s;
-        // Local saves use the same key format regardless of user ID,
-        // so they're already available. Just need to re-upload to cloud.
-        var snap = JSON.parse(saveData);
-        var path = newId + '/slot_' + s + '.json';
-        await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
-          method: 'POST',
-          headers: cloudStorageHeaders(),
-          body: JSON.stringify(snap)
-        });
-      }
-    }
-    console.log('[Migrate] Local saves uploaded to cloud under new ID');
-  } catch(e) { console.warn('[Migrate] Local migration failed:', e); }
+function stripApiKeyFromSave(snap) {
+  // Ensure no apiKey leaks into cloud saves
+  var clean = Object.assign({}, snap);
+  delete clean.apiKey;
+  return clean;
 }
 
 async function cloudSave(slot) {
-  if (!hasCloud()) return;
+  if (!hasCloud()) return { ok: false, error: '未登录云端账号' };
+  var cloudUser = getCloudUser();
+  if (!cloudUser || !cloudUser.id) return { ok: false, error: '无法获取云端用户信息' };
   try {
     var snap = serializeState();
-    var path = currentUser.id + '/slot_' + slot + '.json';
-    await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
+    var clean = stripApiKeyFromSave(snap);
+    var row = {
+      user_id: cloudUser.id,
+      slot: slot,
+      save_data: clean,
+      title: (snap.plot && snap.plot.chapterTitle) ? ('第' + snap.plot.chapter + '章 ' + snap.plot.chapterTitle) : '',
+      world_name: snap.worldGenre || '',
+      character_name: snap.playerName || ''
+    };
+    // Upsert via POST with Prefer: resolution=merge-duplicates
+    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
       method: 'POST',
-      headers: cloudStorageHeaders(),
-      body: JSON.stringify(snap)
+      headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates,return=representation' }, cloudDbHeaders()),
+      body: JSON.stringify(row)
     });
-  } catch(e) {}
+    if (!resp.ok) {
+      var errText = await resp.text().catch(function() { return 'HTTP ' + resp.status; });
+      return { ok: false, error: '云端保存失败 (' + resp.status + '): ' + errText };
+    }
+    return { ok: true, data: row };
+  } catch(e) {
+    return { ok: false, error: '云端保存失败：' + (e.message || '未知错误') };
+  }
 }
 
 async function cloudLoad(slot) {
-  if (!hasCloud()) return null;
+  if (!hasCloud()) return { ok: false, error: '未登录云端账号' };
+  var cloudUser = getCloudUser();
+  if (!cloudUser || !cloudUser.id) return { ok: false, error: '无法获取云端用户信息' };
   try {
-    var path = currentUser.id + '/slot_' + slot + '.json';
-    var resp = await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
-      headers: cloudStorageHeaders()
+    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?user_id=eq.' + encodeURIComponent(cloudUser.id) + '&slot=eq.' + slot + '&limit=1', {
+      headers: cloudDbHeaders()
     });
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch(e) { return null; }
+    if (!resp.ok) {
+      return { ok: false, error: '云端读取失败 (HTTP ' + resp.status + ')' };
+    }
+    var rows = await resp.json();
+    if (!rows || rows.length === 0) return { ok: false, error: '云端存档不存在' };
+    return { ok: true, data: rows[0].save_data };
+  } catch(e) {
+    return { ok: false, error: '云端读取失败：' + (e.message || '未知错误') };
+  }
 }
 
 async function cloudDelete(slot) {
-  if (!hasCloud()) return;
+  if (!hasCloud()) return { ok: false, error: '未登录云端账号' };
+  var cloudUser = getCloudUser();
+  if (!cloudUser || !cloudUser.id) return { ok: false, error: '无法获取云端用户信息' };
   try {
-    var path = currentUser.id + '/slot_' + slot + '.json';
-    await fetch(SUPABASE_URL + '/storage/v1/object/saves/' + path, {
+    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?user_id=eq.' + encodeURIComponent(cloudUser.id) + '&slot=eq.' + slot, {
       method: 'DELETE',
-      headers: cloudStorageHeaders()
+      headers: cloudDbHeaders()
     });
-  } catch(e) {}
+    if (!resp.ok) {
+      return { ok: false, error: '云端删除失败 (HTTP ' + resp.status + ')' };
+    }
+    return { ok: true };
+  } catch(e) {
+    return { ok: false, error: '云端删除失败：' + (e.message || '未知错误') };
+  }
 }
 
 async function cloudListSlots() {
-  if (!hasCloud()) return [];
+  if (!hasCloud()) return { ok: false, error: '未登录云端账号', data: [] };
+  var cloudUser = getCloudUser();
+  if (!cloudUser || !cloudUser.id) return { ok: false, error: '无法获取云端用户信息', data: [] };
   try {
-    var resp = await fetch(SUPABASE_URL + '/storage/v1/object/list/saves', {
-      method: 'POST',
-      headers: cloudStorageHeaders(),
-      body: JSON.stringify({ prefix: currentUser.id + '/', limit: 50, offset: 0 })
+    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?select=slot,title,world_name,character_name,updated_at&user_id=eq.' + encodeURIComponent(cloudUser.id) + '&order=updated_at.desc', {
+      headers: cloudDbHeaders()
     });
-    if (!resp.ok) return [];
-    var data = await resp.json();
-    var slots = [];
-    for (var i = 0; i < data.length; i++) {
-      var name = data[i].name;
-      var match = name.match(/slot_(\d+)\.json$/);
-      if (match) {
-        slots.push({ slot: parseInt(match[1]), player_name: '', world_genre: '', level: 1, updated_at: data[i].created_at || '' });
+    if (!resp.ok) {
+      return { ok: false, error: '云端列表获取失败 (HTTP ' + resp.status + ')', data: [] };
+    }
+    var rows = await resp.json();
+    return { ok: true, data: rows };
+  } catch(e) {
+    return { ok: false, error: '云端列表获取失败：' + (e.message || '未知错误'), data: [] };
+  }
+}
+
+// ── Migration (Storage → Database, best-effort) ──
+async function migrateSaves(oldId, newId) {
+  if (!oldId || oldId === newId) return;
+  if (!hasCloud()) return;
+  // Upload all local saves to cloud Database under new user ID
+  try {
+    // Auto-save
+    var asRaw = localStorage.getItem('text_adventure_save');
+    if (asRaw) {
+      var snap = JSON.parse(asRaw);
+      if (snap.gameStarted) {
+        var clean = stripApiKeyFromSave(snap);
+        await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
+          method: 'POST',
+          headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, cloudDbHeaders()),
+          body: JSON.stringify({
+            user_id: newId, slot: 0,
+            save_data: clean,
+            title: (snap.plot && snap.plot.chapterTitle) ? ('第' + snap.plot.chapter + '章 ' + snap.plot.chapterTitle) : '',
+            world_name: snap.worldGenre || '',
+            character_name: snap.playerName || ''
+          })
+        });
       }
     }
-    return slots;
-  } catch(e) { return []; }
+    // Manual slots (0-9)
+    for (var s = 0; s < 10; s++) {
+      var raw = localStorage.getItem('text_adventure_slot_' + s);
+      if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (s + 1)); // compat: old 1-based slots
+      if (raw) {
+        var ssnap = JSON.parse(raw);
+        var sclean = stripApiKeyFromSave(ssnap);
+        await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
+          method: 'POST',
+          headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, cloudDbHeaders()),
+          body: JSON.stringify({
+            user_id: newId, slot: s,
+            save_data: sclean,
+            title: '',
+            world_name: ssnap.worldGenre || '',
+            character_name: ssnap.playerName || ''
+          })
+        });
+      }
+    }
+    console.log('[Migrate] Local saves uploaded to Database under new user ID');
+  } catch(e) { console.warn('[Migrate] Migration failed:', e); }
 }
 
 function getWorldStatType(genre) {
@@ -521,10 +693,17 @@ function deserializeState(save) {
   state.critSuccessCount = save.critSuccessCount || 0;
 }
 
+// Auto-save slot: use 0 (was -1 in older versions, now unified)
+var AUTO_SAVE_SLOT = 0;
+
 function saveState() {
   const snap = serializeState();
   localStorage.setItem('text_adventure_save', JSON.stringify(snap));
-  cloudSave(-1); // fire-and-forget cloud sync
+  if (hasCloud()) {
+    cloudSave(AUTO_SAVE_SLOT).then(function(result) {
+      if (!result.ok) console.warn('[Cloud] Auto-save failed: ' + result.error);
+    });
+  }
 }
 
 function loadSave() {
@@ -643,6 +822,8 @@ function showScreen(name) {
       if (localStorage.getItem('text_adventure_slot_' + i)) { hasSlots = true; break; }
     }
     if (btnLoadSlot) btnLoadSlot.style.display = hasSlots ? '' : 'none';
+    // Async cloud save check (guard: only for cloud accounts)
+    refreshTitleCloudSaveButtons();
   }
 }
 
@@ -1138,12 +1319,12 @@ async function startNewGame() {
 async function continueGame() {
   let loaded = false;
 
-  // Try cloud auto-save first
-  if (currentUser) {
-    const cloudData = await cloudLoad(-1);
-    if (cloudData) {
-      deserializeState(cloudData);
-      loaded = cloudData.gameStarted === true;
+  // Try cloud auto-save first (slot 0)
+  if (hasCloud()) {
+    const result = await cloudLoad(AUTO_SAVE_SLOT);
+    if (result.ok && result.data) {
+      deserializeState(result.data);
+      loaded = result.data.gameStarted === true;
     }
   }
 
@@ -1655,10 +1836,10 @@ async function loadLastSave() {
 
   let loaded = false;
   // Try cloud auto-save first
-  if (currentUser) {
-    const cloudData = await cloudLoad(-1);
-    if (cloudData && cloudData.gameStarted) {
-      deserializeState(cloudData);
+  if (hasCloud()) {
+    const result = await cloudLoad(AUTO_SAVE_SLOT);
+    if (result.ok && result.data && result.data.gameStarted) {
+      deserializeState(result.data);
       loaded = true;
     }
   }
@@ -1671,12 +1852,12 @@ async function loadLastSave() {
     resetSuggestions();
     document.getElementById('command-input').focus();
   } else {
-    // Try loading from slot 0
+    // Try loading from slot 0 manually
     let slot0Loaded = false;
-    if (currentUser) {
-      const cloudData = await cloudLoad(0);
-      if (cloudData) {
-        deserializeState(cloudData);
+    if (hasCloud()) {
+      const result = await cloudLoad(0);
+      if (result.ok && result.data) {
+        deserializeState(result.data);
         slot0Loaded = true;
       }
     }
@@ -2405,29 +2586,60 @@ function saveGame() {
   showSaveManager();
 }
 
+// Returns account type label for UI
+function accountTypeLabel() {
+  if (hasCloud()) return 'cloud';
+  if (currentUser && currentUser.type === 'local') return 'local';
+  return 'guest';
+}
+
 async function saveToSlot(n) {
   if (!state.gameStarted) return;
   localStorage.setItem('text_adventure_slot_' + n, JSON.stringify(serializeState()));
-  await cloudSave(n);
-  toast('已保存到槽位 ' + (n + 1) + (currentUser ? ' ☁️' : '') + ' ✓');
+
+  var cloudOk = false;
+  if (hasCloud()) {
+    var result = await cloudSave(n);
+    cloudOk = result.ok;
+    if (!result.ok) {
+      toast('本地已保存，但云端同步失败：' + result.error, 'error');
+    }
+  }
+
+  if (cloudOk) {
+    var now = new Date().toLocaleString('zh-CN');
+    toast('已保存到槽位 ' + (n + 1) + '｜云端同步成功：' + now + ' ✓');
+  } else if (!hasCloud()) {
+    var at = accountTypeLabel();
+    if (at === 'guest') toast('已保存到槽位 ' + (n + 1) + '（游客模式，仅本机） ✓');
+    else toast('已保存到槽位 ' + (n + 1) + '（本地账号，仅本机） ✓');
+  }
   showSaveManager();
 }
 
 async function loadSlot(n) {
-  let raw = null;
+  var raw = null;
+  var source = 'local';
 
-  // Try cloud first if logged in
-  if (currentUser) {
-    const cloudData = await cloudLoad(n);
-    if (cloudData) raw = JSON.stringify(cloudData);
+  // Try cloud first if we have a valid session
+  if (hasCloud()) {
+    var result = await cloudLoad(n);
+    if (result.ok && result.data) {
+      raw = JSON.stringify(result.data);
+      source = 'cloud';
+    }
   }
 
   // Fallback to local
-  if (!raw) raw = localStorage.getItem('text_adventure_slot_' + n);
+  if (!raw) {
+    raw = localStorage.getItem('text_adventure_slot_' + n);
+    // Compatibility: try old 1-based key format
+    if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (n + 1));
+  }
   if (!raw) { toast('槽位为空', 'error'); return; }
 
   try {
-    const save = JSON.parse(raw);
+    var save = JSON.parse(raw);
     deserializeState(save);
     closeOverlay();
     showScreen('game');
@@ -2435,67 +2647,104 @@ async function loadSlot(n) {
     resetSuggestions();
     updateStatsBar();
     document.getElementById('command-input').focus();
-    toast('已读取槽位 ' + (n + 1) + (currentUser ? ' ☁️' : ''));
+    if (source === 'cloud') toast('已从云端读取槽位 ' + (n + 1));
+    else toast('已读取本地槽位 ' + (n + 1));
   } catch(e) {
-    toast('存档损坏', 'error');
+    toast('存档损坏，无法读取', 'error');
   }
 }
 
 async function deleteSlot(n) {
   localStorage.removeItem('text_adventure_slot_' + n);
-  await cloudDelete(n);
-  toast('已删除槽位 ' + (n + 1));
+  // Also clean old 1-based key
+  localStorage.removeItem('text_adventure_slot_' + (n + 1));
+
+  if (hasCloud()) {
+    var result = await cloudDelete(n);
+    if (result.ok) toast('已删除槽位 ' + (n + 1) + '（本地及云端）');
+    else toast('已删除本地槽位 ' + (n + 1) + '，但云端删除失败：' + result.error, 'error');
+  } else {
+    toast('已删除槽位 ' + (n + 1));
+  }
   showSaveManager();
 }
 
 async function getSlotInfo(n) {
-  // Merge cloud + local: prefer cloud if newer, else local
-  let info = null;
-  if (currentUser) {
-    const slots = await cloudListSlots();
-    const cs = slots.find(s => s.slot === n);
-    if (cs) {
-      info = {
-        playerName: cs.player_name || '???',
-        worldGenre: cs.world_genre || '???',
-        level: cs.level || 1,
-        savedAt: cs.updated_at || '',
-        source: 'cloud',
-      };
+  // Show cloud + local, prefer cloud if newer
+  var cloudInfo = null;
+  var localInfo = null;
+
+  if (hasCloud()) {
+    var result = await cloudListSlots();
+    if (result.ok) {
+      var cs = (result.data || []).find(function(s) { return s.slot === n; });
+      if (cs) {
+        cloudInfo = {
+          playerName: cs.character_name || '???',
+          worldGenre: cs.world_name || '???',
+          level: 1,
+          savedAt: cs.updated_at || '',
+          source: 'cloud',
+        };
+      }
     }
   }
-  if (!info) {
-    const raw = localStorage.getItem('text_adventure_slot_' + n);
-    if (!raw) return null;
+
+  var raw = localStorage.getItem('text_adventure_slot_' + n);
+  if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (n + 1)); // compat
+  if (raw) {
     try {
-      const s = JSON.parse(raw);
-      info = {
+      var s = JSON.parse(raw);
+      localInfo = {
         playerName: s.playerName || '???',
         worldGenre: s.worldGenre || '???',
         level: (s.stats && s.stats.level) ? s.stats.level : 1,
         savedAt: s.savedAt || '',
         source: 'local',
       };
-    } catch(e) { return null; }
+    } catch(e) {}
   }
-  return info;
+
+  // Prefer cloud if it exists and is newer
+  if (cloudInfo && localInfo) {
+    return cloudInfo.savedAt >= localInfo.savedAt ? cloudInfo : localInfo;
+  }
+  return cloudInfo || localInfo || null;
 }
 
 async function showSaveManager() {
-  const overlay = document.getElementById('overlay');
-  const content = document.getElementById('overlay-content');
+  var overlay = document.getElementById('overlay');
+  var content = document.getElementById('overlay-content');
 
-  let html = '<h3>💾 存档管理';
-  if (currentUser) html += ' <span style="color:var(--accent-bright);font-size:11px;font-family:var(--font-ui)">☁️ 已同步</span>';
+  // Header with correct status text
+  var html = '<h3>💾 存档管理';
+  var at = accountTypeLabel();
+  if (at === 'cloud') {
+    html += ' <span style="color:var(--accent-bright);font-size:11px;font-family:var(--font-ui)">☁️ 云端账号</span>';
+  } else if (at === 'local') {
+    html += ' <span style="color:var(--text-dim);font-size:11px;font-family:var(--font-ui)">💻 本地账号</span>';
+  } else {
+    html += ' <span style="color:var(--text-dim);font-size:11px;font-family:var(--font-ui)">👤 游客模式</span>';
+  }
   html += '</h3>';
 
-  const asRaw = localStorage.getItem('text_adventure_save');
+  // Status line
+  if (at === 'cloud') {
+    html += '<p style="text-align:center;font-size:11px;color:var(--accent-bright);margin-bottom:8px;font-family:var(--font-ui)">已登录云端账号，可跨设备同步存档。</p>';
+  } else if (at === 'local') {
+    html += '<p style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:8px;font-family:var(--font-ui)">当前为本地账号，存档不会跨设备同步。</p>';
+  } else {
+    html += '<p style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:8px;font-family:var(--font-ui)">当前为游客模式，存档仅保存在本机浏览器。</p>';
+  }
+
+  // Auto-save info
+  var asRaw = localStorage.getItem('text_adventure_save');
   if (asRaw) {
     try {
-      const as = JSON.parse(asRaw);
+      var as = JSON.parse(asRaw);
       if (as.gameStarted && as.savedAt) {
-        const d = new Date(as.savedAt);
-        const ds = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+        var d = new Date(as.savedAt);
+        var ds = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
                    String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
         html += '<div class="save-autosave">🔄 自动存档: ' + ds + '</div>';
       }
@@ -2503,16 +2752,16 @@ async function showSaveManager() {
   }
 
   html += '<div class="save-slots">';
-  for (let i = 0; i < SAVE_SLOTS; i++) {
-    const info = await getSlotInfo(i);
+  for (var i = 0; i < SAVE_SLOTS; i++) {
+    var info = await getSlotInfo(i);
     html += '<div class="save-slot' + (info ? '' : ' empty') + '">';
-    html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : '') + '</div>';
+    html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : (info ? ' 💻' : '')) + '</div>';
     if (info) {
-      const d = new Date(info.savedAt);
-      const ds = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
-                 String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-      html += '<div class="slot-info">' + escapeHtml(info.playerName) + ' <span>|</span> ' + escapeHtml(info.worldGenre) + ' <span>|</span> Lv.' + info.level + '</div>';
-      html += '<div class="slot-time">' + ds + '</div>';
+      var dd = new Date(info.savedAt);
+      var dds = dd.getFullYear() + '/' + (dd.getMonth()+1) + '/' + dd.getDate() + ' ' +
+                 String(dd.getHours()).padStart(2,'0') + ':' + String(dd.getMinutes()).padStart(2,'0');
+      html += '<div class="slot-info">' + escapeHtml(info.playerName) + ' <span>|</span> ' + escapeHtml(info.worldGenre) + '</div>';
+      html += '<div class="slot-time">' + dds + (info.source === 'cloud' ? ' · 云端' : ' · 本地') + '</div>';
       html += '<div class="slot-actions">';
       html += '<button class="load-btn" onclick="loadSlot(' + i + ')">📂 读取</button>';
       html += '<button class="save-btn" onclick="saveToSlot(' + i + ')">💾 覆盖</button>';
@@ -2616,14 +2865,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch(e) {}
   }
 
-  // If logged in, check cloud saves for continue/load buttons
-  if (currentUser) {
+  // If cloud logged in, check cloud saves for continue/load buttons
+  if (hasCloud()) {
     try {
-      const cloudSlots = await cloudListSlots();
-      if (cloudSlots.length > 0) {
+      const result = await cloudListSlots();
+      if (result.ok && result.data.length > 0) {
         document.getElementById('btn-load-slot').style.display = '';
-        // Check if cloud auto-save exists for continue
-        const hasCloudAuto = cloudSlots.some(s => s.slot === -1);
+        // Check if cloud auto-save (slot 0) exists for continue
+        const hasCloudAuto = result.data.some(function(s) { return s.slot === AUTO_SAVE_SLOT; });
         if (hasCloudAuto && !hasSave) {
           const savedKey = localStorage.getItem('text_adventure_apikey');
           if (savedKey) {
@@ -2636,11 +2885,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch(e) {}
   }
 
-  // Show load button if any local manual slots exist
-  for (let i = 0; i < SAVE_SLOTS; i++) {
-    if (localStorage.getItem('text_adventure_slot_' + i)) {
+  // Show load button if any local manual slots exist (0-9)
+  for (var _i = 0; _i < SAVE_SLOTS; _i++) {
+    if (localStorage.getItem('text_adventure_slot_' + _i)) {
       document.getElementById('btn-load-slot').style.display = '';
       break;
+    }
+  }
+  // Also check old 1-based slots (compat)
+  if (document.getElementById('btn-load-slot').style.display !== '') {
+    for (var _j = 1; _j <= SAVE_SLOTS; _j++) {
+      if (localStorage.getItem('text_adventure_slot_' + _j)) {
+        document.getElementById('btn-load-slot').style.display = '';
+        break;
+      }
     }
   }
 
