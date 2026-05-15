@@ -104,20 +104,18 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Lock screen — requires both admin password AND service_role key -->
+<!-- Lock screen — requires service_role key -->
 <div id="lock-screen" class="lock-screen">
   <div class="lock-box">
     <h1>异 界 卷</h1>
     <div class="sub">后 台 管 理</div>
-    <label for="admin-password">管理密码</label>
-    <input type="password" id="admin-password" placeholder="输入管理密码" autocomplete="off">
     <label for="service-key">Supabase Service Role Key</label>
     <input type="password" id="service-key" placeholder="从 Supabase Dashboard 获取" autocomplete="off">
     <button onclick="unlock()">进 入 后 台</button>
     <div class="lock-error" id="lock-error"></div>
     <div class="lock-note">
-      ⚠️ 此页面需要两项凭据：管理密码 + Supabase service_role key。<br>
-      请勿将此文件部署到公开位置。service_role key 拥有数据库完全访问权限。
+      ⚠️ 需要 Supabase service_role key 才能访问。<br>
+      service_role key 拥有数据库完全访问权限，请勿泄露。
     </div>
   </div>
 </div>
@@ -140,8 +138,6 @@
 
 <script>
 var API_URL = 'https://cydvlahdycqttljesokw.supabase.co';
-var ADMIN_PASSWORD = 'admin888';
-// ⚠️ 请修改 ADMIN_PASSWORD 为你自己的管理密码
 var SERVICE_KEY = '';  // 运行时从输入框获取，不硬编码在文件中
 var unlocked = false;
 
@@ -161,21 +157,15 @@ function toast(msg) {
 }
 
 function unlock() {
-  var pw = document.getElementById('admin-password').value;
   var sk = document.getElementById('service-key').value.trim();
   var errEl = document.getElementById('lock-error');
 
-  if (!pw || !sk) {
-    errEl.textContent = '管理密码和 service_role key 缺一不可';
-    return;
-  }
-  if (pw !== ADMIN_PASSWORD) {
-    errEl.textContent = '管理密码错误';
+  if (!sk) {
+    errEl.textContent = '请输入 service_role key';
     return;
   }
 
   SERVICE_KEY = sk;
-  // Quick validation: try a simple query
   var btn = document.querySelector('.lock-box button');
   btn.disabled = true; btn.textContent = '验证中...';
   errEl.textContent = '';
@@ -203,13 +193,8 @@ function lock() {
   SERVICE_KEY = '';
   document.getElementById('lock-screen').style.display = 'flex';
   document.getElementById('dashboard').style.display = 'none';
-  document.getElementById('admin-password').value = '';
   document.getElementById('service-key').value = '';
 }
-
-document.getElementById('admin-password').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') document.getElementById('service-key').focus();
-});
 document.getElementById('service-key').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') unlock();
 });
