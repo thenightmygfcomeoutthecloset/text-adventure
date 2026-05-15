@@ -2669,15 +2669,21 @@ async function deleteSlot(n) {
   showSaveManager();
 }
 
-async function getSlotInfo(n) {
+async function getSlotInfo(n, opt_cloudSlots) {
   // Show cloud + local, prefer cloud if newer
   var cloudInfo = null;
   var localInfo = null;
 
   if (hasCloud()) {
-    var result = await cloudListSlots();
-    if (result.ok) {
-      var cs = (result.data || []).find(function(s) { return s.slot === n; });
+    var slots;
+    if (opt_cloudSlots !== undefined) {
+      slots = opt_cloudSlots;
+    } else {
+      var result = await cloudListSlots();
+      slots = result.ok ? (result.data || []) : null;
+    }
+    if (slots) {
+      var cs = slots.find(function(s) { return s.slot === n; });
       if (cs) {
         cloudInfo = {
           playerName: cs.character_name || '???',
@@ -2716,9 +2722,30 @@ async function showSaveManager() {
   var overlay = document.getElementById('overlay');
   var content = document.getElementById('overlay-content');
 
-  // Header with correct status text
-  var html = '<h3>💾 存档管理';
+  // Show overlay immediately with loading state
+  var html = '<h3>💾 存档管理</h3><p style="text-align:center;color:var(--text-dim);font-family:var(--font-ui)">加载中...</p>';
+  content.innerHTML = html;
+  overlay.classList.remove('hidden');
+
+  // Pre-fetch cloud slots once (instead of per-slot in getSlotInfo)
+  var cloudSlots = null;
+  var cloudError = null;
   var at = accountTypeLabel();
+  if (at === 'cloud') {
+    try {
+      var result = await cloudListSlots();
+      if (result.ok) {
+        cloudSlots = result.data || [];
+      } else {
+        cloudError = result.error || '云端查询失败';
+      }
+    } catch(e) {
+      cloudError = e.message || '云端查询异常';
+    }
+  }
+
+  // Rebuild header
+  html = '<h3>💾 存档管理';
   if (at === 'cloud') {
     html += ' <span style="color:var(--accent-bright);font-size:11px;font-family:var(--font-ui)">☁️ 云端账号</span>';
   } else if (at === 'local') {
@@ -2737,6 +2764,12 @@ async function showSaveManager() {
     html += '<p style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:8px;font-family:var(--font-ui)">当前为游客模式，存档仅保存在本机浏览器。</p>';
   }
 
+  // Cloud error banner
+  if (cloudError) {
+    console.warn('[Cloud] 存档列表查询失败：' + cloudError);
+    html += '<p style="text-align:center;font-size:11px;color:var(--danger);margin-bottom:8px;font-family:var(--font-ui)">⚠️ 云端存档检查失败，仅显示本地存档。可稍后重试。</p>';
+  }
+
   // Auto-save info
   var asRaw = localStorage.getItem('text_adventure_save');
   if (asRaw) {
@@ -2753,7 +2786,7 @@ async function showSaveManager() {
 
   html += '<div class="save-slots">';
   for (var i = 0; i < SAVE_SLOTS; i++) {
-    var info = await getSlotInfo(i);
+    var info = await getSlotInfo(i, cloudSlots);
     html += '<div class="save-slot' + (info ? '' : ' empty') + '">';
     html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : (info ? ' 💻' : '')) + '</div>';
     if (info) {
