@@ -6,7 +6,7 @@
 -- 1. 建表
 CREATE TABLE IF NOT EXISTS public.game_saves (
     id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id     uuid NOT NULL,
+    user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     slot        integer NOT NULL,
     save_data   jsonb NOT NULL,
     title       text DEFAULT '',
