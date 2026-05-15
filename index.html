@@ -13,7 +13,7 @@
   <div class="title-main">
     <h1>异 界 卷</h1>
     <p class="subtitle">自 由 文 字 冒 险</p>
-    <p class="version-tag">v0.5.2「断界」</p>
+    <p class="version-tag">v0.6.0「断界」</p>
   </div>
   <div class="title-actions">
     <div class="settings-section" style="margin-bottom:16px">
@@ -198,11 +198,13 @@
   <div id="stats-bar">
     <div id="stats-items"></div>
     <div id="location-tag"></div>
+    <div id="destiny-tag" style="display:none;cursor:default;font-size:13px;color:var(--accent-bright);padding:2px 6px" title=""></div>
     <div class="stats-actions">
       <button onclick="showAnnals()" title="年表">📜 <span class="btn-label">年表</span></button>
       <button onclick="showInventory()" title="物品">📦 <span class="btn-label">物品</span></button>
       <button onclick="showRelationships()" title="羁绊">💞 <span class="btn-label">羁绊</span></button>
       <button onclick="saveGame()" title="保存">💾 <span class="btn-label">保存</span></button>
+      <button onclick="exportStory()" title="导出故事">📄 <span class="btn-label">导出</span></button>
       <button onclick="showScreen('title')" title="退出">🚪 <span class="btn-label">退出</span></button>
       <button onclick="showAchievements()" title="成就">🏆 <span class="btn-label">成就</span></button>
     </div>

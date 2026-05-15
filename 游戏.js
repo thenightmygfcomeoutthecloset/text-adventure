@@ -676,6 +676,10 @@ function getInitialPlot(genre) {
 
 // ═══════════════════ CHARACTER TEMPLATES ═══════════════════
 
+let _inputHistory = [];
+let _inputHistoryIdx = -1;
+let _novelCharacters = null;
+let _novelKeyFacts = null;
 let state = {
   screen: 'title',
   apiKey: '',
@@ -1090,22 +1094,43 @@ async function processNovel() {
 
   // Use first 50000 chars for analysis (max practical for API context)
   const snippet = novelFileContent.slice(0, 50000);
-  const prompt = `以下是一部小说的片段。请根据这段文字，分析并总结这部小说的世界观，包括但不限于：时代背景、力量体系/科技水平、社会结构、主要势力或阵营、核心冲突、氛围基调、以及这个世界独特的规则或设定。输出一个200-400字的完整世界观描述，使读者能清楚地了解这是一个怎样的世界。直接输出世界观描述，不要铺垫或评价。
+  const parsePrompt = `你是一个小说世界观分析师。请分析以下小说片段，提取关键信息，严格按 JSON 格式输出，不要输出任何其他内容：
 
-===小说片段===
-${snippet}
-===片段结束===
+{
+  "worldDesc": "世界观概述，200字以内，包含时代背景、力量体系、核心矛盾",
+  "characters": [
+    { "name": "人物名", "title": "身份", "relation": "与主角的关系（相识/盟友/对手等）", "notes": "简短备注" }
+  ],
+  "keyFacts": "重要已知信息，100字以内，包含关键地点和已发生的重要事件"
+}
 
-请输出世界观描述：`;
+小说片段：
+${snippet}`;
 
   try {
     const messages = [
-      { role: 'system', content: '你是一个擅长分析和总结文学世界观的助手。根据提供的小说文字，精准提炼世界观设定。只输出世界观描述，不输出其他内容。' },
-      { role: 'user', content: prompt },
+      { role: 'system', content: '你是一个擅长分析和总结文学世界观的助手。只输出 JSON，不输出其他内容。' },
+      { role: 'user', content: parsePrompt },
     ];
     const response = await callAPI(messages);
-    state.customWorldDesc = response.trim();
-    document.getElementById('custom-world-desc').value = response.trim();
+    // Try to parse JSON response
+    try {
+      var parsed = JSON.parse(response.replace(/```json|```/g, '').trim());
+      state.customWorldDesc = parsed.worldDesc || response;
+      state.worldMemory = parsed.keyFacts || '';
+      _novelKeyFacts = parsed.keyFacts || '';
+      if (Array.isArray(parsed.characters)) {
+        _novelCharacters = parsed.characters.filter(function(c) { return c.name; });
+      } else {
+        _novelCharacters = null;
+      }
+    } catch(jsonErr) {
+      // JSON parse failed — fall back to plain text
+      state.customWorldDesc = response.trim();
+      _novelCharacters = null;
+      _novelKeyFacts = null;
+    }
+    document.getElementById('custom-world-desc').value = state.customWorldDesc;
     toast('世界观解析完成！点击下一步继续 ✨');
   } catch (err) {
     toast('解析失败：' + err.message, 'error');
@@ -1308,6 +1333,23 @@ async function startNewGame() {
   state.location = '';
   state.worldMemory = '';
   state.relationships = [];
+  // Inject novel characters & key facts from processNovel() if available
+  if (genre === '穿越小说') {
+    if (_novelKeyFacts && !state.worldMemory) state.worldMemory = _novelKeyFacts;
+    if (_novelCharacters && _novelCharacters.length > 0) {
+      _novelCharacters.forEach(function(c) {
+        state.relationships.push({
+          name: c.name,
+          title: c.title || '',
+          relation: c.relation || '相识',
+          notes: c.notes || '',
+        });
+      });
+    }
+  }
+  // Clear temporaries after injection
+  _novelCharacters = null;
+  _novelKeyFacts = null;
   state.fullHistory = [];
   state.apiHistory = [];
   state.plot = getInitialPlot(genre);
@@ -1725,6 +1767,12 @@ async function sendCommand() {
   if (!command || state.screen !== 'game') return;
 
   input.value = '';
+  // Record to input history (deduped, max 20)
+  if (command && (_inputHistory.length === 0 || _inputHistory[_inputHistory.length - 1] !== command)) {
+    _inputHistory.push(command);
+    if (_inputHistory.length > 20) _inputHistory.shift();
+  }
+  _inputHistoryIdx = -1;
   input.disabled = true;
   btn.disabled = true;
   document.getElementById('btn-suggest').disabled = true;
@@ -1739,7 +1787,22 @@ async function sendCommand() {
     const sign = rollResult.modifier >= 0 ? '+' : '';
     const rollText = `🎲 命运判定：${rollResult.d20} / 20${rollResult.modifier !== 0 ? ` (${sign}${rollResult.modifier})` : ''}，${DICE_TIER_NAMES[rollResult.tier]}`;
     appendRollResult(rollText, rollResult.tier);
-    aiCommand = `【🎲 命运判定：d20=${rollResult.d20}，修正${sign}${rollResult.modifier}，结果=${rollResult.total}，判定=${DICE_TIER_NAMES[rollResult.tier]}】请根据此判定结果来叙事——大失败则行动灾难性失败，大成功则行动出色完成。\n${command}`;
+    aiCommand = `【🎲 命运判定：d20=${rollResult.d20}，修正${sign}${rollResult.modifier}，结果=${rollResult.total}，判定=${DICE_TIER_NAMES[rollResult.tier]}】`;
+    var diceInstruction = '';
+    if (rollResult.tier === 'critFail') {
+      diceInstruction = '【🎲 大失败 (1/20)】这次行动必须以灾难性方式失败——不只是失败，而是产生严重的连锁后果：受伤、暴露、失去重要物品、触怒关键NPC、或引发不可逆的剧情转折。不可轻描淡写，不可用"险些"缓和。后果必须真实落地。';
+    } else if (rollResult.tier === 'critSuccess') {
+      diceInstruction = '【🎲 大成功 (20/20)】这次行动以出乎意料的完美方式成功——超出角色预期，可能附带额外收获、意外发现、或令周围人刮目相看的效果。';
+    } else if (rollResult.tier === 'greatSuccess') {
+      diceInstruction = '【🎲 优秀 (' + rollResult.total + '/20)】行动顺利成功，效果良好。';
+    } else if (rollResult.tier === 'success') {
+      diceInstruction = '【🎲 成功 (' + rollResult.total + '/20)】行动基本成功，但可能有小的代价或瑕疵。';
+    } else if (rollResult.tier === 'fail') {
+      diceInstruction = '【🎲 失败 (' + rollResult.total + '/20)】行动失败，产生相应后果。';
+    } else {
+      diceInstruction = '【🎲 大失败 (' + rollResult.total + '/20)】行动灾难性失败，必须有严重后果落地。';
+    }
+    aiCommand = diceInstruction + '\n' + command;
   } else {
     state._recentReckless = 0;
   }
@@ -2062,12 +2125,18 @@ function _extractItemsFromResponse(response) {
 }
 
 function _extractStatChanges(response) {
-  const p = /\[属性变化[：:]\s*(\w+)\s*=\s*([+-]\d+)\]/g;
-  let m;
+  var p = /\[属性变化[：:]\s*(\w+)\s*=\s*([+-]\d+)\]/g;
+  var m;
   while ((m = p.exec(response)) !== null) {
-    const key = m[1].trim();
-    const delta = parseInt(m[2], 10);
-    if (state.stats[key] !== undefined) state.stats[key] = Math.max(0, state.stats[key] + delta);
+    var key = m[1].trim();
+    var delta = parseInt(m[2], 10);
+    if (state.stats[key] !== undefined) {
+      var oldVal = state.stats[key];
+      state.stats[key] = Math.max(0, oldVal + delta);
+      if (delta > 0 && key === 'level') {
+        _showStatBoostPopup('⬆', '境界提升', state.playerName + ' 突破至 ' + state.stats[key] + ' 阶');
+      }
+    }
   }
 }
 
@@ -2400,7 +2469,15 @@ async function compressMemory(turnCount) {
     const response = await callAPI([{ role: 'user', content: prompt }]);
     if (_apiHistoryVersion !== version) return; // discard stale compression
     const roundLabel = `[第${turnCount}轮记忆]`;
-    state.worldMemory = (state.worldMemory ? state.worldMemory + '\n' : '') + roundLabel + ' ' + response.trim();
+    var newMemory = (state.worldMemory ? state.worldMemory + '\n' : '') + roundLabel + ' ' + response.trim();
+    var MEMORY_LIMIT = 800;
+    if (newMemory.length > MEMORY_LIMIT) {
+      var trimmed = newMemory.slice(-MEMORY_LIMIT);
+      var firstNewline = trimmed.indexOf('\n');
+      state.worldMemory = firstNewline !== -1 ? trimmed.slice(firstNewline + 1) : trimmed;
+    } else {
+      state.worldMemory = newMemory;
+    }
   } catch(e) {
     // Silent fail — compression is best-effort
   }
@@ -2426,6 +2503,17 @@ function updateStatsBar() {
   }
   container.innerHTML = html;
   document.getElementById('location-tag').textContent = state.location || '';
+  var destinyEl = document.getElementById('destiny-tag');
+  if (destinyEl && state.characterSheet && state.characterSheet.destiny) {
+    var destiny = DESTINIES.find(function(d) { return d.id === state.characterSheet.destiny; });
+    if (destiny) {
+      destinyEl.textContent = destiny.icon || '✦';
+      destinyEl.title = '【' + destiny.name + '】' + destiny.desc;
+      destinyEl.style.display = '';
+    }
+  } else if (destinyEl) {
+    destinyEl.style.display = 'none';
+  }
 }
 
 // ═══════════════════ INVENTORY ═══════════════════
@@ -2486,6 +2574,15 @@ function showAnnals() {
         </div>`;
       });
       html += '</div>';
+    });
+    html += '</div>';
+  }
+  // Pending hooks section
+  if (state.plot && state.plot.pendingHooks && state.plot.pendingHooks.length > 0) {
+    html += '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">';
+    html += '<div style="font-size:11px;color:var(--text-dim);letter-spacing:2px;margin-bottom:10px">▍悬而未决</div>';
+    state.plot.pendingHooks.forEach(function(hook) {
+      html += '<div style="font-size:13px;color:var(--text);padding:6px 0 6px 12px;border-left:2px solid var(--accent);margin-bottom:6px;font-family:var(--font-narrative)">' + escapeHtml(hook) + '</div>';
     });
     html += '</div>';
   }
@@ -2568,6 +2665,35 @@ function showAchievementPopup(ach) {
   setTimeout(() => {
     if (_achShowing && popup.classList.contains('show')) dismiss();
   }, 3500);
+}
+
+function _showStatBoostPopup(icon, title, desc) {
+  var popup = document.getElementById('achievement-popup');
+  if (!popup) return;
+  if (_achShowing || _achQueue.length > 0) {
+    _achQueue.push({ icon: icon, name: title, desc: desc, color: '#4a7a5a' });
+    return;
+  }
+  popup.style.setProperty('--ach-color', '#4a7a5a');
+  popup.style.setProperty('--ach-glow', '#4a7a5a33');
+  popup.innerHTML = '<div class="ach-icon-wrap">' + icon + '</div>' +
+    '<div class="ach-body">' +
+      '<div class="ach-label">' + escapeHtml(title) + '</div>' +
+      '<div class="ach-name">' + escapeHtml(desc) + '</div>' +
+    '</div>';
+  popup.classList.remove('hidden');
+  void popup.offsetWidth;
+  popup.classList.add('show');
+  _achShowing = true;
+  var dismiss = function() {
+    popup.classList.remove('show');
+    popup.classList.add('hidden');
+    _achShowing = false;
+    popup.removeEventListener('click', dismiss);
+    if (_achQueue.length > 0) setTimeout(function() { showAchievementPopup(_achQueue.shift()); }, 1500);
+  };
+  popup.addEventListener('click', dismiss);
+  setTimeout(function() { if (_achShowing && popup.classList.contains('show')) dismiss(); }, 3000);
 }
 
 function checkAchievements() {
@@ -2939,6 +3065,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       sendCommand();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (_inputHistory.length === 0) return;
+      if (_inputHistoryIdx === -1) _inputHistoryIdx = _inputHistory.length - 1;
+      else if (_inputHistoryIdx > 0) _inputHistoryIdx--;
+      cmdInput.value = _inputHistory[_inputHistoryIdx];
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (_inputHistoryIdx === -1) return;
+      if (_inputHistoryIdx < _inputHistory.length - 1) {
+        _inputHistoryIdx++;
+        cmdInput.value = _inputHistory[_inputHistoryIdx];
+      } else {
+        _inputHistoryIdx = -1;
+        cmdInput.value = '';
+      }
     }
   });
 
@@ -2979,6 +3121,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 });
+
+// ═══════════════════ EXPORT STORY ═══════════════════
+function exportStory() {
+  if (!state.gameStarted && state.fullHistory.length === 0) {
+    toast('还没有故事可以导出', 'error');
+    return;
+  }
+  var lines = [];
+  lines.push('# ' + (state.playerName || '无名') + ' · ' + (state.worldGenre || '未知世界'));
+  lines.push('');
+  lines.push('> 导出自「异界卷·文字冒险」· ' + new Date().toLocaleDateString('zh-CN'));
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  state.fullHistory.forEach(function(entry) {
+    if (entry.role === 'player') {
+      lines.push('**▸ ' + entry.content + '**');
+      lines.push('');
+    } else {
+      lines.push(entry.content);
+      lines.push('');
+    }
+  });
+  var md = lines.join('\n');
+  var blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = (state.playerName || '故事') + '_' + new Date().toISOString().slice(0, 10) + '.md';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('故事已导出 ✨');
+}
 
 // ═══════════════════ TITLE STARS ═══════════════════
 (function createStars() {
