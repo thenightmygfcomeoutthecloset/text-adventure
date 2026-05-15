@@ -1063,8 +1063,11 @@ function toggleAdvancedOptions() {
 let novelFileContent = '';
 
 function handleNovelFile(input) {
-  const file = input.files[0];
+  var file = input.files[0];
   if (!file) return;
+  if (file.size > 500 * 1024) {
+    toast('文件较大（' + (file.size / 1024).toFixed(0) + 'KB），解析时可能产生较高 API 费用，建议使用前 8000 字的精简版本', 'error');
+  }
   document.getElementById('novel-file-name').textContent = file.name;
 
   const reader = new FileReader();
@@ -1855,6 +1858,7 @@ function handlePlayerDeath() {
 function restartGame() {
   state.stats = { ...getWorldStats(state.worldGenre).stats };
   state.inventory = [];
+  state.characterSheet = { gender: '', attributes: {} };
   state.location = '';
   state.worldMemory = '';
   state.relationships = [];
@@ -2348,21 +2352,25 @@ function stripAnnotations(text) {
 }
 
 function extractLocation(text) {
-  // Simple heuristic: look for location indicators
-  const patterns = [
+  // Prefer [场景：xxx] annotation — most reliable
+  var sceneMatch = text.match(/\[场景[：:]\s*([^\]]{1,15})\]/);
+  if (sceneMatch) return sceneMatch[1].trim();
+  // Fallback: heuristic regex patterns
+  var patterns = [
     /(?:位于|来到|站在|身处|踏入|到达)(?:了)?(?:一[个座处片间])?[「"']?([^，。！？\n「"']{2,12})[「"']?/,
     /(?:你(?:现在|此刻|正)?在)([^，。！？\n]{2,12})/,
-    /([^，。！？\n]{2,8})(?:的|之)(?:中|内|里|上|前|下)/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
+  for (var i = 0; i < patterns.length; i++) {
+    var m = text.match(patterns[i]);
     if (m) return m[1];
   }
   return null;
 }
 
 function summarizeForMemory(text) {
-  return text.slice(0, 200).replace(/\n/g, ' ');
+  var stripped = stripAnnotations(text);
+  var sentences = stripped.split(/[。！？\n]/).filter(function(s) { return s.trim().length > 5; });
+  return sentences.slice(0, 3).join('。') + (sentences.length > 0 ? '。' : '');
 }
 
 function summarizeForPlot(text) {
@@ -2711,6 +2719,7 @@ async function loadSlot(n) {
 }
 
 async function deleteSlot(n) {
+  if (!confirm('确认删除槽位 ' + (n + 1) + ' 的存档？此操作不可撤销。')) return;
   // Delete scoped local slot
   var slotKey = getSaveKey(n);
   if (slotKey) localStorage.removeItem(slotKey);
@@ -2832,10 +2841,7 @@ async function showSaveManager() {
     try {
       var as = JSON.parse(asRaw);
       if (as.gameStarted && as.savedAt) {
-        var d = new Date(as.savedAt);
-        var ds = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
-                   String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-        html += '<div class="save-autosave">🔄 自动存档: ' + ds + '</div>';
+        html += '<div class="save-autosave">🔄 自动存档: ' + formatSaveTime(as.savedAt) + '</div>';
       }
     } catch(e) {}
   }
@@ -2846,11 +2852,8 @@ async function showSaveManager() {
     html += '<div class="save-slot' + (info ? '' : ' empty') + '">';
     html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : (info ? ' 💻' : '')) + '</div>';
     if (info) {
-      var dd = new Date(info.savedAt);
-      var dds = dd.getFullYear() + '/' + (dd.getMonth()+1) + '/' + dd.getDate() + ' ' +
-                 String(dd.getHours()).padStart(2,'0') + ':' + String(dd.getMinutes()).padStart(2,'0');
       html += '<div class="slot-info">' + escapeHtml(info.playerName) + ' <span>|</span> ' + escapeHtml(info.worldGenre) + '</div>';
-      html += '<div class="slot-time">' + dds + (info.source === 'cloud' ? ' · 云端' : ' · 本地') + '</div>';
+      html += '<div class="slot-time">' + formatSaveTime(info.savedAt) + (info.source === 'cloud' ? ' · 云端' : ' · 本地') + '</div>';
       html += '<div class="slot-actions">';
       html += '<button class="load-btn" onclick="loadSlot(' + i + ')">📂 读取</button>';
       html += '<button class="save-btn" onclick="saveToSlot(' + i + ')">💾 覆盖</button>';
@@ -2876,6 +2879,13 @@ function closeOverlay() {
 }
 
 // ═══════════════════ UTILITIES ═══════════════════
+function formatSaveTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+         String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -2916,7 +2926,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     else if (e.key === 'Escape') closeLoginModal();
   });
   document.getElementById('auth-password').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleRegister();
+    if (e.key === 'Enter') handleSignIn();
     else if (e.key === 'Escape') closeLoginModal();
   });
 
