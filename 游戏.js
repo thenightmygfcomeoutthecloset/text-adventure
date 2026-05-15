@@ -145,7 +145,6 @@ async function localRegister(input, password) {
       closeAuthModal();
       toast('注册成功，「' + display + '」已登录 ☁️');
       refreshTitleButtons();
-      refreshTitleCloudSaveButtons();
       if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
       return;
     } else {
@@ -191,7 +190,6 @@ async function localSignIn(input, password) {
     closeAuthModal();
     toast('已登录云端账号，可跨设备同步存档。');
     refreshTitleButtons();
-    refreshTitleCloudSaveButtons();
     if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
     return;
   }
@@ -294,7 +292,31 @@ function handleRegister() {
     btn.disabled = false; btn.textContent = '注 册';
   });
 }
+function refreshTitleLocalSaveButtons() {
+  var raw = localStorage.getItem('text_adventure_save');
+  var hasSave = !!raw;
+  var btnContinue = document.getElementById('btn-continue');
+  var btnLoadSlot = document.getElementById('btn-load-slot');
+  if (hasSave) {
+    try {
+      var save = JSON.parse(raw);
+      if (save.gameStarted) { btnContinue.style.display = ''; }
+      else { btnContinue.style.display = 'none'; }
+    } catch(e) { btnContinue.style.display = 'none'; }
+  } else {
+    btnContinue.style.display = 'none';
+  }
+  // Check for manual save slots (local)
+  var hasSlots = false;
+  for (var i = 0; i < SAVE_SLOTS; i++) {
+    if (localStorage.getItem('text_adventure_slot_' + i)) { hasSlots = true; break; }
+  }
+  if (btnLoadSlot) btnLoadSlot.style.display = hasSlots ? '' : 'none';
+}
+
 function refreshTitleButtons() {
+  refreshTitleLocalSaveButtons();
+  refreshTitleCloudSaveButtons();
   showScreen('title');
 }
 
@@ -324,31 +346,26 @@ async function refreshTitleCloudSaveButtons() {
     var slots = result.data || [];
     if (slots.length === 0) return;
 
-    var hasAutoSave = slots.some(function(s) { return s.slot === AUTO_SAVE_SLOT; });
+    // "读取存档" button — show if any cloud slots exist
+    var btnLoadSlot = document.getElementById('btn-load-slot');
+    if (btnLoadSlot) btnLoadSlot.style.display = '';
 
-    // "继续游戏" — show if cloud has auto-save AND no local save exists
+    // "继续游戏" button — show if cloud has auto-save AND no local auto-save exists
+    var hasAutoSave = slots.some(function(s) { return s.slot === AUTO_SAVE_SLOT; });
+    if (!hasAutoSave) return;
     var localRaw = localStorage.getItem('text_adventure_save');
     var hasLocalSave = false;
     if (localRaw) {
-      try {
-        var localSave = JSON.parse(localRaw);
-        hasLocalSave = localSave.gameStarted === true;
-      } catch(e) {}
+      try { hasLocalSave = JSON.parse(localRaw).gameStarted === true; } catch(e) {}
     }
-
-    if (hasAutoSave && !hasLocalSave) {
-      var savedKey = localStorage.getItem('text_adventure_apikey');
-      if (savedKey) {
-        var apiInput = document.getElementById('api-key-input');
-        if (apiInput && !apiInput.value) apiInput.value = savedKey;
-      }
-      var btnContinue = document.getElementById('btn-continue');
-      if (btnContinue) btnContinue.style.display = '';
+    if (hasLocalSave) return;
+    var savedKey = localStorage.getItem('text_adventure_apikey');
+    if (savedKey) {
+      var apiInput = document.getElementById('api-key-input');
+      if (apiInput && !apiInput.value) apiInput.value = savedKey;
     }
-
-    // "读取存档" — show if any cloud slots exist
-    var btnLoadSlot = document.getElementById('btn-load-slot');
-    if (btnLoadSlot) btnLoadSlot.style.display = '';
+    var btnContinue = document.getElementById('btn-continue');
+    if (btnContinue) btnContinue.style.display = '';
   } catch(e) {
     if (seq !== _cloudRefreshSeq) return;
     console.warn('[Cloud] 云端存档检查异常：' + (e.message || '未知错误'));
@@ -449,7 +466,7 @@ async function cloudSave(slot) {
       character_name: snap.playerName || ''
     };
     // Upsert via POST with Prefer: resolution=merge-duplicates
-    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
+    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?on_conflict=user_id,slot', {
       method: 'POST',
       headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates,return=representation' }, cloudDbHeaders()),
       body: JSON.stringify(row)
@@ -531,7 +548,7 @@ async function migrateSaves(oldId, newId) {
       var snap = JSON.parse(asRaw);
       if (snap.gameStarted) {
         var clean = stripApiKeyFromSave(snap);
-        await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
+        await fetch(SUPABASE_URL + '/rest/v1/game_saves?on_conflict=user_id,slot', {
           method: 'POST',
           headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, cloudDbHeaders()),
           body: JSON.stringify({
@@ -551,7 +568,7 @@ async function migrateSaves(oldId, newId) {
       if (raw) {
         var ssnap = JSON.parse(raw);
         var sclean = stripApiKeyFromSave(ssnap);
-        await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
+        await fetch(SUPABASE_URL + '/rest/v1/game_saves?on_conflict=user_id,slot', {
           method: 'POST',
           headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, cloudDbHeaders()),
           body: JSON.stringify({
@@ -803,26 +820,7 @@ function showScreen(name) {
   }
 
   if (name === 'title') {
-    const raw = localStorage.getItem('text_adventure_save');
-    const hasSave = !!raw;
-    const btnContinue = document.getElementById('btn-continue');
-    const btnLoadSlot = document.getElementById('btn-load-slot');
-    if (hasSave) {
-      try {
-        const save = JSON.parse(raw);
-        if (save.gameStarted) { btnContinue.style.display = ''; }
-        else { btnContinue.style.display = 'none'; }
-      } catch(e) { btnContinue.style.display = 'none'; }
-    } else {
-      btnContinue.style.display = 'none';
-    }
-    // Check for manual save slots
-    let hasSlots = false;
-    for (let i = 0; i < SAVE_SLOTS; i++) {
-      if (localStorage.getItem('text_adventure_slot_' + i)) { hasSlots = true; break; }
-    }
-    if (btnLoadSlot) btnLoadSlot.style.display = hasSlots ? '' : 'none';
-    // Async cloud save check (guard: only for cloud accounts)
+    refreshTitleLocalSaveButtons();
     refreshTitleCloudSaveButtons();
   }
 }
@@ -2669,15 +2667,21 @@ async function deleteSlot(n) {
   showSaveManager();
 }
 
-async function getSlotInfo(n) {
+async function getSlotInfo(n, opt_cloudSlots) {
   // Show cloud + local, prefer cloud if newer
   var cloudInfo = null;
   var localInfo = null;
 
   if (hasCloud()) {
-    var result = await cloudListSlots();
-    if (result.ok) {
-      var cs = (result.data || []).find(function(s) { return s.slot === n; });
+    var slots;
+    if (opt_cloudSlots !== undefined) {
+      slots = opt_cloudSlots;
+    } else {
+      var result = await cloudListSlots();
+      slots = result.ok ? (result.data || []) : null;
+    }
+    if (slots) {
+      var cs = slots.find(function(s) { return s.slot === n; });
       if (cs) {
         cloudInfo = {
           playerName: cs.character_name || '???',
@@ -2716,9 +2720,30 @@ async function showSaveManager() {
   var overlay = document.getElementById('overlay');
   var content = document.getElementById('overlay-content');
 
-  // Header with correct status text
-  var html = '<h3>💾 存档管理';
+  // Show overlay immediately with loading state
+  var html = '<h3>💾 存档管理</h3><p style="text-align:center;color:var(--text-dim);font-family:var(--font-ui)">加载中...</p>';
+  content.innerHTML = html;
+  overlay.classList.remove('hidden');
+
+  // Pre-fetch cloud slots once (instead of per-slot in getSlotInfo)
+  var cloudSlots = null;
+  var cloudError = null;
   var at = accountTypeLabel();
+  if (at === 'cloud') {
+    try {
+      var result = await cloudListSlots();
+      if (result.ok) {
+        cloudSlots = result.data || [];
+      } else {
+        cloudError = result.error || '云端查询失败';
+      }
+    } catch(e) {
+      cloudError = e.message || '云端查询异常';
+    }
+  }
+
+  // Rebuild header
+  html = '<h3>💾 存档管理';
   if (at === 'cloud') {
     html += ' <span style="color:var(--accent-bright);font-size:11px;font-family:var(--font-ui)">☁️ 云端账号</span>';
   } else if (at === 'local') {
@@ -2737,6 +2762,12 @@ async function showSaveManager() {
     html += '<p style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:8px;font-family:var(--font-ui)">当前为游客模式，存档仅保存在本机浏览器。</p>';
   }
 
+  // Cloud error banner
+  if (cloudError) {
+    console.warn('[Cloud] 存档列表查询失败：' + cloudError);
+    html += '<p style="text-align:center;font-size:11px;color:var(--danger);margin-bottom:8px;font-family:var(--font-ui)">⚠️ 云端存档检查失败，仅显示本地存档。可稍后重试。</p>';
+  }
+
   // Auto-save info
   var asRaw = localStorage.getItem('text_adventure_save');
   if (asRaw) {
@@ -2753,7 +2784,7 @@ async function showSaveManager() {
 
   html += '<div class="save-slots">';
   for (var i = 0; i < SAVE_SLOTS; i++) {
-    var info = await getSlotInfo(i);
+    var info = await getSlotInfo(i, cloudSlots);
     html += '<div class="save-slot' + (info ? '' : ' empty') + '">';
     html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : (info ? ' 💻' : '')) + '</div>';
     if (info) {
