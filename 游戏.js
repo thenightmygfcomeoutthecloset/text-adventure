@@ -1,11 +1,28 @@
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
-// currentUser.type: 'guest' | 'local' | 'cloud'
+// currentUser.type: 'guest' | 'cloud'
 let currentUser = null; // { id, email, displayName, type }
 var supabaseSession = null; // { access_token, refresh_token, expires_at, user }
 
 function makeId() { return 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
-function hashPassword(pw) { let h = 0; for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h + pw.charCodeAt(i)) | 0; } return 'h_' + Math.abs(h).toString(36); }
 
+// ═══════════════════ SCOPED STORAGE ═══════════════════
+// All save data is now keyed by identity scope — guest vs cloud accounts are fully isolated.
+function getStorageScope() {
+  if (!currentUser) return null;
+  if (currentUser.type === 'guest') return 'guest:' + currentUser.id;
+  if (currentUser.type === 'cloud') return 'cloud:' + currentUser.id;
+  return null;
+}
+function getAutoSaveKey() {
+  var scope = getStorageScope();
+  if (!scope) return null;
+  return 'text_adventure_save:' + scope + ':auto';
+}
+function getSaveKey(slot) {
+  var scope = getStorageScope();
+  if (!scope) return null;
+  return 'text_adventure_save:' + scope + ':slot:' + slot;
+}
 // ── Cloud session helpers ──
 function hasCloud() {
   return !!(supabaseSession && supabaseSession.access_token);
@@ -23,8 +40,6 @@ function getCloudUser() {
 
 function saveIdentity(id) {
   var identity = { id: id.id, email: id.email, displayName: id.displayName || id.email, type: id.type || 'guest', createdAt: id.createdAt || new Date().toISOString() };
-  // Only local accounts store passwordHash for verification
-  if (id.type === 'local' && id.passwordHash) identity.passwordHash = id.passwordHash;
   localStorage.setItem('text_adventure_identity', JSON.stringify(identity));
 }
 function loadIdentity() {
@@ -32,7 +47,16 @@ function loadIdentity() {
 }
 function initIdentity() {
   var id = loadIdentity();
-  if (id) { currentUser = { id: id.id, email: id.email, displayName: id.displayName || id.email, type: id.type || 'guest' }; }
+  if (id) {
+    // Normalize: old 'local' type is now 'guest' (local accounts removed)
+    var normType = id.type === 'local' ? 'guest' : (id.type || 'guest');
+    currentUser = { id: id.id, email: id.email, displayName: id.displayName || id.email, type: normType };
+    if (normType !== id.type) {
+      // Persist the normalization
+      id.type = normType;
+      saveIdentity(id);
+    }
+  }
   var savedSession = localStorage.getItem('text_adventure_session');
   if (savedSession) {
     try {
@@ -97,8 +121,27 @@ function guestLogin() {
   currentUser = { id: id.id, email: id.email, displayName: name, type: 'guest' };
   supabaseSession = null;
   localStorage.removeItem('text_adventure_session');
+
+  // Migrate old global saves to scoped guest keys (one-time)
+  if (!localStorage.getItem('text_adventure_migration_scoped_v1')) {
+    var oldAuto = localStorage.getItem('text_adventure_save');
+    if (oldAuto) {
+      try {
+        localStorage.setItem(getAutoSaveKey(), oldAuto);
+      } catch(e) {}
+    }
+    for (var mi = 0; mi < 10; mi++) {
+      var oldSlot = localStorage.getItem('text_adventure_slot_' + mi);
+      if (!oldSlot) oldSlot = localStorage.getItem('text_adventure_slot_' + (mi + 1));
+      if (oldSlot) {
+        try { localStorage.setItem(getSaveKey(mi), oldSlot); } catch(e) {}
+      }
+    }
+    localStorage.setItem('text_adventure_migration_scoped_v1', 'true');
+  }
+
   updateAuthUI();
-  toast('当前为游客模式，存档仅保存在本机浏览器。');
+  toast('游客模式：存档仅保存在当前浏览器。');
   refreshTitleButtons();
 }
 
@@ -128,11 +171,20 @@ async function localRegister(input, password) {
   var account = norm.account;
   var display = norm.display;
 
-  // Try cloud registration first
   var result = await withTimeout(cloudSignUp(account, password), 10000).catch(function(e) {
     return { ok: false, error: '网络超时，请检查网络后重试' };
   });
-  if (result.ok && result.data.user) {
+
+  if (!result.ok) {
+    if (result.error && result.error.indexOf('already') !== -1) {
+      toast('该账号已注册，请直接登录', 'error');
+    } else {
+      toast('注册失败：' + (result.error || '未知错误'), 'error');
+    }
+    return;
+  }
+
+  if (result.data && result.data.user) {
     var cloudUser = result.data.user;
     var oldIdentity = loadIdentity();
     var suid = cloudUser.id;
@@ -154,18 +206,7 @@ async function localRegister(input, password) {
     }
   }
 
-  // Cloud signup failed — show error, DO NOT silently fall back to local
-  if (result.error) {
-    if (result.error.indexOf('already') !== -1 || result.error.indexOf('already registered') !== -1) {
-      toast('该账号已注册，请直接登录', 'error');
-    } else {
-      toast('云端注册失败：' + result.error, 'error');
-    }
-    return;
-  }
-
-  // Only reach here if cloud returned no error but also no user (unexpected)
-  toast('云端注册失败，请稍后重试', 'error');
+  toast('注册失败：服务器未返回用户信息，请稍后重试', 'error');
 }
 
 async function localSignIn(input, password) {
@@ -174,11 +215,16 @@ async function localSignIn(input, password) {
   var account = norm.account;
   var display = norm.display;
 
-  // 1) Try cloud login first
   var result = await withTimeout(cloudSignIn(account, password), 10000).catch(function(e) {
     return { ok: false, error: '网络超时，请检查网络后重试' };
   });
-  if (result.ok && result.data.user) {
+
+  if (!result.ok) {
+    toast('登录失败：' + (result.error || '未知错误'), 'error');
+    return;
+  }
+
+  if (result.data && result.data.user) {
     var cloudUser = result.data.user;
     var oldIdentity = loadIdentity();
     var suid = cloudUser.id;
@@ -194,25 +240,7 @@ async function localSignIn(input, password) {
     return;
   }
 
-  // 2) Cloud failed — try local account
-  var localId = loadIdentity();
-  if (localId && localId.email === display && localId.passwordHash === hashPassword(password)) {
-    currentUser = { id: localId.id, email: localId.email, displayName: localId.displayName || localId.email, type: localId.type || 'local' };
-    updateAuthUI();
-    closeAuthModal();
-    toast('当前为本地账号，存档不会跨设备同步。');
-    refreshTitleButtons();
-    return;
-  }
-
-  // 3) Both failed
-  if (result.error) {
-    toast('登录失败：' + result.error, 'error');
-  } else if (!localId || localId.email !== display) {
-    toast('账号未注册', 'error');
-  } else {
-    toast('密码错误', 'error');
-  }
+  toast('登录失败：服务器未返回用户信息', 'error');
 }
 
 async function signOut() {
@@ -225,11 +253,13 @@ async function signOut() {
       });
     } catch(e) { /* best-effort */ }
   }
+  var wasCloud = hasCloud();
   currentUser = null;
   supabaseSession = null;
   localStorage.removeItem('text_adventure_session');
   updateAuthUI();
-  toast('已退出登录。存档仍保留在本机浏览器中。');
+  if (wasCloud) toast('已退出云端账号，请以游客身份继续或登录其他账号。');
+  else toast('已退出登录。');
   refreshTitleButtons();
 }
 
@@ -244,9 +274,8 @@ function updateAuthUI() {
       var typeLabel = '';
       if (currentUser.type === 'cloud') typeLabel = ' ☁️云端';
       else if (currentUser.type === 'guest') typeLabel = ' 👤游客';
-      else typeLabel = ' 💻本地';
       emailEl.textContent = (currentUser.displayName || currentUser.email) + typeLabel;
-      emailEl.title = '账号: ' + currentUser.email + '\n类型: ' + (currentUser.type || '未知') + '\n点击修改用户名';
+      emailEl.title = '账号: ' + currentUser.email + '\n类型: ' + (currentUser.type === 'cloud' ? '云端账号' : '游客') + '\n点击修改用户名';
       emailEl.style.cursor = 'pointer';
       emailEl.onclick = changeDisplayName;
     }
@@ -293,7 +322,24 @@ function handleRegister() {
   });
 }
 function refreshTitleLocalSaveButtons() {
-  var raw = localStorage.getItem('text_adventure_save');
+  // Only guest/cloud with no cloud session show local-scoped saves
+  if (hasCloud()) {
+    // Cloud user: hide local-only buttons, cloud refresh handles button visibility
+    return;
+  }
+
+  var scope = getStorageScope();
+  if (!scope) {
+    // No current user — hide all
+    var btnContinue = document.getElementById('btn-continue');
+    var btnLoadSlot = document.getElementById('btn-load-slot');
+    if (btnContinue) btnContinue.style.display = 'none';
+    if (btnLoadSlot) btnLoadSlot.style.display = 'none';
+    return;
+  }
+
+  var autoKey = getAutoSaveKey();
+  var raw = autoKey ? localStorage.getItem(autoKey) : null;
   var hasSave = !!raw;
   var btnContinue = document.getElementById('btn-continue');
   var btnLoadSlot = document.getElementById('btn-load-slot');
@@ -306,10 +352,10 @@ function refreshTitleLocalSaveButtons() {
   } else {
     btnContinue.style.display = 'none';
   }
-  // Check for manual save slots (local)
+  // Check for scoped manual save slots
   var hasSlots = false;
   for (var i = 0; i < SAVE_SLOTS; i++) {
-    if (localStorage.getItem('text_adventure_slot_' + i)) { hasSlots = true; break; }
+    if (localStorage.getItem(getSaveKey(i))) { hasSlots = true; break; }
   }
   if (btnLoadSlot) btnLoadSlot.style.display = hasSlots ? '' : 'none';
 }
@@ -350,15 +396,14 @@ async function refreshTitleCloudSaveButtons() {
     var btnLoadSlot = document.getElementById('btn-load-slot');
     if (btnLoadSlot) btnLoadSlot.style.display = '';
 
-    // "继续游戏" button — show if cloud has auto-save AND no local auto-save exists
+    // "继续游戏" button — show if cloud has auto-save AND no current-identity-scoped local auto-save
     var hasAutoSave = slots.some(function(s) { return s.slot === AUTO_SAVE_SLOT; });
     if (!hasAutoSave) return;
-    var localRaw = localStorage.getItem('text_adventure_save');
-    var hasLocalSave = false;
+    var autoKey = getAutoSaveKey();
+    var localRaw = autoKey ? localStorage.getItem(autoKey) : null;
     if (localRaw) {
-      try { hasLocalSave = JSON.parse(localRaw).gameStarted === true; } catch(e) {}
+      try { if (JSON.parse(localRaw).gameStarted === true) return; } catch(e) {}
     }
-    if (hasLocalSave) return;
     var savedKey = localStorage.getItem('text_adventure_apikey');
     if (savedKey) {
       var apiInput = document.getElementById('api-key-input');
@@ -536,14 +581,17 @@ async function cloudListSlots() {
   }
 }
 
-// ── Migration (Storage → Database, best-effort) ──
+// ── Migration (upload scoped local saves to cloud, best-effort) ──
 async function migrateSaves(oldId, newId) {
   if (!oldId || oldId === newId) return;
   if (!hasCloud()) return;
-  // Upload all local saves to cloud Database under new user ID
+
+  var guestScopePrefix = 'text_adventure_save:guest:' + oldId;
+
   try {
-    // Auto-save
-    var asRaw = localStorage.getItem('text_adventure_save');
+    // Auto-save — try scoped guest key first, then old global key
+    var asRaw = localStorage.getItem(guestScopePrefix + ':auto');
+    if (!asRaw) asRaw = localStorage.getItem('text_adventure_save');
     if (asRaw) {
       var snap = JSON.parse(asRaw);
       if (snap.gameStarted) {
@@ -561,10 +609,11 @@ async function migrateSaves(oldId, newId) {
         });
       }
     }
-    // Manual slots (0-9)
+    // Manual slots (0-9) — try scoped guest keys first, then old global
     for (var s = 0; s < 10; s++) {
-      var raw = localStorage.getItem('text_adventure_slot_' + s);
-      if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (s + 1)); // compat: old 1-based slots
+      var raw = localStorage.getItem(guestScopePrefix + ':slot:' + s);
+      if (!raw) raw = localStorage.getItem('text_adventure_slot_' + s);
+      if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (s + 1));
       if (raw) {
         var ssnap = JSON.parse(raw);
         var sclean = stripApiKeyFromSave(ssnap);
@@ -581,7 +630,7 @@ async function migrateSaves(oldId, newId) {
         });
       }
     }
-    console.log('[Migrate] Local saves uploaded to Database under new user ID');
+    console.log('[Migrate] Guest saves uploaded to cloud under new user ID');
   } catch(e) { console.warn('[Migrate] Migration failed:', e); }
 }
 
@@ -714,20 +763,25 @@ function deserializeState(save) {
 var AUTO_SAVE_SLOT = 0;
 
 function saveState() {
-  const snap = serializeState();
-  localStorage.setItem('text_adventure_save', JSON.stringify(snap));
+  var snap = serializeState();
+  // Always save to scoped localStorage
+  var autoKey = getAutoSaveKey();
+  if (autoKey) localStorage.setItem(autoKey, JSON.stringify(snap));
+  // Cloud: also sync to Supabase
   if (hasCloud()) {
     cloudSave(AUTO_SAVE_SLOT).then(function(result) {
-      if (!result.ok) console.warn('[Cloud] Auto-save failed: ' + result.error);
+      if (!result.ok) toast('本地缓存已保存，但云端同步失败：' + (result.error || '未知错误'), 'error');
     });
   }
 }
 
 function loadSave() {
-  const raw = localStorage.getItem('text_adventure_save');
+  var autoKey = getAutoSaveKey();
+  if (!autoKey) return false;
+  var raw = localStorage.getItem(autoKey);
   if (!raw) return false;
   try {
-    const save = JSON.parse(raw);
+    var save = JSON.parse(raw);
     deserializeState(save);
     return save.gameStarted === true;
   } catch (e) {
@@ -1315,19 +1369,23 @@ async function startNewGame() {
 }
 
 async function continueGame() {
-  let loaded = false;
+  if (!currentUser) { toast('请先登录或进入游客模式', 'error'); return; }
 
-  // Try cloud auto-save first (slot 0)
+  var loaded = false;
+
   if (hasCloud()) {
-    const result = await cloudLoad(AUTO_SAVE_SLOT);
+    // Cloud: try Supabase auto-save first
+    var result = await cloudLoad(AUTO_SAVE_SLOT);
     if (result.ok && result.data) {
       deserializeState(result.data);
       loaded = result.data.gameStarted === true;
     }
+    // Fallback to cloud-scoped local cache only
+    if (!loaded) loaded = loadSave();
+  } else if (currentUser.type === 'guest') {
+    // Guest: only local scoped save
+    loaded = loadSave();
   }
-
-  // Fallback to local
-  if (!loaded) loaded = loadSave();
 
   if (!loaded) {
     toast('没有找到存档', 'error');
@@ -1860,9 +1918,12 @@ async function loadLastSave() {
       }
     }
     if (!slot0Loaded) {
-      const raw = localStorage.getItem('text_adventure_slot_0');
-      if (raw) {
-        try { deserializeState(JSON.parse(raw)); slot0Loaded = true; } catch(e) {}
+      var slotKey = getSaveKey(0);
+      if (slotKey) {
+        var raw = localStorage.getItem(slotKey);
+        if (raw) {
+          try { deserializeState(JSON.parse(raw)); slot0Loaded = true; } catch(e) {}
+        }
       }
     }
     if (slot0Loaded) {
@@ -2587,30 +2648,28 @@ function saveGame() {
 // Returns account type label for UI
 function accountTypeLabel() {
   if (hasCloud()) return 'cloud';
-  if (currentUser && currentUser.type === 'local') return 'local';
   return 'guest';
 }
 
 async function saveToSlot(n) {
   if (!state.gameStarted) return;
-  localStorage.setItem('text_adventure_slot_' + n, JSON.stringify(serializeState()));
+  // Save to scoped localStorage
+  var slotKey = getSaveKey(n);
+  if (slotKey) localStorage.setItem(slotKey, JSON.stringify(serializeState()));
 
   var cloudOk = false;
   if (hasCloud()) {
     var result = await cloudSave(n);
     cloudOk = result.ok;
     if (!result.ok) {
-      toast('本地已保存，但云端同步失败：' + result.error, 'error');
+      toast('本地缓存已保存，但云端同步失败：' + (result.error || '未知错误'), 'error');
     }
   }
 
   if (cloudOk) {
-    var now = new Date().toLocaleString('zh-CN');
-    toast('已保存到槽位 ' + (n + 1) + '｜云端同步成功：' + now + ' ✓');
+    toast('已保存到槽位 ' + (n + 1) + '｜云端同步成功 ✓');
   } else if (!hasCloud()) {
-    var at = accountTypeLabel();
-    if (at === 'guest') toast('已保存到槽位 ' + (n + 1) + '（游客模式，仅本机） ✓');
-    else toast('已保存到槽位 ' + (n + 1) + '（本地账号，仅本机） ✓');
+    toast('已保存到槽位 ' + (n + 1) + '（游客模式：存档仅保存在当前浏览器） ✓');
   }
   showSaveManager();
 }
@@ -2619,7 +2678,7 @@ async function loadSlot(n) {
   var raw = null;
   var source = 'local';
 
-  // Try cloud first if we have a valid session
+  // Cloud: try Supabase first (RLS ensures only current user's saves)
   if (hasCloud()) {
     var result = await cloudLoad(n);
     if (result.ok && result.data) {
@@ -2628,11 +2687,10 @@ async function loadSlot(n) {
     }
   }
 
-  // Fallback to local
+  // Fallback to scoped local only — never read another identity's saves
   if (!raw) {
-    raw = localStorage.getItem('text_adventure_slot_' + n);
-    // Compatibility: try old 1-based key format
-    if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (n + 1));
+    var slotKey = getSaveKey(n);
+    if (slotKey) raw = localStorage.getItem(slotKey);
   }
   if (!raw) { toast('槽位为空', 'error'); return; }
 
@@ -2653,14 +2711,14 @@ async function loadSlot(n) {
 }
 
 async function deleteSlot(n) {
-  localStorage.removeItem('text_adventure_slot_' + n);
-  // Also clean old 1-based key
-  localStorage.removeItem('text_adventure_slot_' + (n + 1));
+  // Delete scoped local slot
+  var slotKey = getSaveKey(n);
+  if (slotKey) localStorage.removeItem(slotKey);
 
   if (hasCloud()) {
     var result = await cloudDelete(n);
     if (result.ok) toast('已删除槽位 ' + (n + 1) + '（本地及云端）');
-    else toast('已删除本地槽位 ' + (n + 1) + '，但云端删除失败：' + result.error, 'error');
+    else toast('已删除本地槽位 ' + (n + 1) + '，但云端删除失败：' + (result.error || '未知错误'), 'error');
   } else {
     toast('已删除槽位 ' + (n + 1));
   }
@@ -2668,7 +2726,7 @@ async function deleteSlot(n) {
 }
 
 async function getSlotInfo(n, opt_cloudSlots) {
-  // Show cloud + local, prefer cloud if newer
+  // Show cloud + current-identity scoped local, prefer cloud if newer
   var cloudInfo = null;
   var localInfo = null;
 
@@ -2694,19 +2752,22 @@ async function getSlotInfo(n, opt_cloudSlots) {
     }
   }
 
-  var raw = localStorage.getItem('text_adventure_slot_' + n);
-  if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (n + 1)); // compat
-  if (raw) {
-    try {
-      var s = JSON.parse(raw);
-      localInfo = {
-        playerName: s.playerName || '???',
-        worldGenre: s.worldGenre || '???',
-        level: (s.stats && s.stats.level) ? s.stats.level : 1,
-        savedAt: s.savedAt || '',
-        source: 'local',
-      };
-    } catch(e) {}
+  // Only read scoped local saves — never read another identity's slots
+  var slotKey = getSaveKey(n);
+  if (slotKey) {
+    var raw = localStorage.getItem(slotKey);
+    if (raw) {
+      try {
+        var s = JSON.parse(raw);
+        localInfo = {
+          playerName: s.playerName || '???',
+          worldGenre: s.worldGenre || '???',
+          level: (s.stats && s.stats.level) ? s.stats.level : 1,
+          savedAt: s.savedAt || '',
+          source: 'local',
+        };
+      } catch(e) {}
+    }
   }
 
   // Prefer cloud if it exists and is newer
@@ -2745,31 +2806,28 @@ async function showSaveManager() {
   // Rebuild header
   html = '<h3>💾 存档管理';
   if (at === 'cloud') {
-    html += ' <span style="color:var(--accent-bright);font-size:11px;font-family:var(--font-ui)">☁️ 云端账号</span>';
-  } else if (at === 'local') {
-    html += ' <span style="color:var(--text-dim);font-size:11px;font-family:var(--font-ui)">💻 本地账号</span>';
+    html += ' <span style="color:var(--accent-bright);font-size:11px;font-family:var(--font-ui)">☁️ 云端账号：存档可跨设备同步</span>';
   } else {
-    html += ' <span style="color:var(--text-dim);font-size:11px;font-family:var(--font-ui)">👤 游客模式</span>';
+    html += ' <span style="color:var(--text-dim);font-size:11px;font-family:var(--font-ui)">👤 游客模式：存档仅保存在当前浏览器</span>';
   }
   html += '</h3>';
 
   // Status line
   if (at === 'cloud') {
-    html += '<p style="text-align:center;font-size:11px;color:var(--accent-bright);margin-bottom:8px;font-family:var(--font-ui)">已登录云端账号，可跨设备同步存档。</p>';
-  } else if (at === 'local') {
-    html += '<p style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:8px;font-family:var(--font-ui)">当前为本地账号，存档不会跨设备同步。</p>';
+    html += '<p style="text-align:center;font-size:11px;color:var(--accent-bright);margin-bottom:8px;font-family:var(--font-ui)">当前只显示此账号的存档</p>';
   } else {
-    html += '<p style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:8px;font-family:var(--font-ui)">当前为游客模式，存档仅保存在本机浏览器。</p>';
+    html += '<p style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:8px;font-family:var(--font-ui)">游客存档不会同步到其他设备</p>';
   }
 
   // Cloud error banner
   if (cloudError) {
     console.warn('[Cloud] 存档列表查询失败：' + cloudError);
-    html += '<p style="text-align:center;font-size:11px;color:var(--danger);margin-bottom:8px;font-family:var(--font-ui)">⚠️ 云端存档检查失败，仅显示本地存档。可稍后重试。</p>';
+    html += '<p style="text-align:center;font-size:11px;color:var(--danger);margin-bottom:8px;font-family:var(--font-ui)">⚠️ 云端存档检查失败。可稍后重试。</p>';
   }
 
-  // Auto-save info
-  var asRaw = localStorage.getItem('text_adventure_save');
+  // Auto-save info (scoped)
+  var autoKey = getAutoSaveKey();
+  var asRaw = autoKey ? localStorage.getItem(autoKey) : null;
   if (asRaw) {
     try {
       var as = JSON.parse(asRaw);
@@ -2882,55 +2940,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target === e.currentTarget) closeOverlay();
   });
 
-  // Check for saved game on load
-  const raw = localStorage.getItem('text_adventure_save');
-  const hasSave = !!raw;
-  if (hasSave) {
-    try {
-      const save = JSON.parse(raw);
-      const savedKey = localStorage.getItem('text_adventure_apikey');
-      
-      if (save.gameStarted) {
-        document.getElementById('btn-continue').style.display = '';
-      }
-    } catch(e) {}
-  }
-
-  // If cloud logged in, check cloud saves for continue/load buttons
-  if (hasCloud()) {
-    try {
-      const result = await cloudListSlots();
-      if (result.ok && result.data.length > 0) {
-        document.getElementById('btn-load-slot').style.display = '';
-        // Check if cloud auto-save (slot 0) exists for continue
-        const hasCloudAuto = result.data.some(function(s) { return s.slot === AUTO_SAVE_SLOT; });
-        if (hasCloudAuto && !hasSave) {
-          const savedKey = localStorage.getItem('text_adventure_apikey');
-          if (savedKey) {
-            state.apiKey = savedKey;
-            document.getElementById('api-key-input').value = savedKey;
-          }
-          document.getElementById('btn-continue').style.display = '';
-        }
-      }
-    } catch(e) {}
-  }
-
-  // Show load button if any local manual slots exist (0-9)
-  for (var _i = 0; _i < SAVE_SLOTS; _i++) {
-    if (localStorage.getItem('text_adventure_slot_' + _i)) {
-      document.getElementById('btn-load-slot').style.display = '';
-      break;
-    }
-  }
-  // Also check old 1-based slots (compat)
-  if (document.getElementById('btn-load-slot').style.display !== '') {
-    for (var _j = 1; _j <= SAVE_SLOTS; _j++) {
-      if (localStorage.getItem('text_adventure_slot_' + _j)) {
-        document.getElementById('btn-load-slot').style.display = '';
-        break;
-      }
-    }
+  // Check for saved game on load (scoped to current identity)
+  refreshTitleButtons();
+  // Also restore saved API key if any
+  var savedApiKey = localStorage.getItem('text_adventure_apikey');
+  if (savedApiKey) {
+    state.apiKey = savedApiKey;
+    var apiInput = document.getElementById('api-key-input');
+    if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
   }
 
   // Add narrative-end marker
