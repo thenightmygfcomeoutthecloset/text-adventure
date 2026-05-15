@@ -21,9 +21,8 @@
 
 | 类型 | 存档位置 | 跨设备同步 | 说明 |
 |------|---------|-----------|------|
-| 游客 | localStorage | 否 | 无需注册，一键开玩 |
-| 本地账号 | localStorage | 否 | 本地密码保护，不跨设备 |
-| 云端账号 | localStorage + Supabase | 是 | 邮箱注册，存档跨设备同步 |
+| 游客 | localStorage（scoped） | 否 | 无需注册，一键开玩，存档仅本机 |
+| 云端账号 | localStorage（scoped）+ Supabase | 是 | 邮箱注册，存档跨设备同步 |
 
 ## 技术栈
 
