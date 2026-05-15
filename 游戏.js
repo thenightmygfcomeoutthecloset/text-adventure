@@ -200,7 +200,7 @@ async function localRegister(input, password) {
       if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
       return;
     } else {
-      toast('已发送确认邮件到 ' + display + '，请查收后登录 📧');
+      toast('注册成功但未自动登录，请尝试登录；如果仍失败，请检查 Supabase 是否关闭 Confirm email。');
       closeAuthModal();
       return;
     }
@@ -360,7 +360,15 @@ function refreshTitleLocalSaveButtons() {
   if (btnLoadSlot) btnLoadSlot.style.display = hasSlots ? '' : 'none';
 }
 
+function resetTitleSaveButtons() {
+  var btnContinue = document.getElementById('btn-continue');
+  var btnLoadSlot = document.getElementById('btn-load-slot');
+  if (btnContinue) btnContinue.style.display = 'none';
+  if (btnLoadSlot) btnLoadSlot.style.display = 'none';
+}
+
 function refreshTitleButtons() {
+  resetTitleSaveButtons();
   refreshTitleLocalSaveButtons();
   refreshTitleCloudSaveButtons();
   showScreen('title');

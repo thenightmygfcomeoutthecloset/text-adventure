@@ -25,7 +25,12 @@ function getSaveKey(slot) {
 }
 // ── Cloud session helpers ──
 function hasCloud() {
-  return !!(supabaseSession && supabaseSession.access_token);
+  return !!(
+    currentUser &&
+    currentUser.type === 'cloud' &&
+    supabaseSession &&
+    supabaseSession.access_token
+  );
 }
 function getCloudUser() {
   if (!hasCloud()) return null;
@@ -114,11 +119,21 @@ function changeDisplayName() {
   toast('用户名已更新 ✨');
 }
 
-function guestLogin() {
+function getOrCreateGuestIdentity() {
+  var raw = localStorage.getItem('text_adventure_guest_identity');
+  if (raw) {
+    try { return JSON.parse(raw); } catch(e) {}
+  }
   var name = '游客_' + makeId().slice(-4);
-  var id = { id: makeId(), email: name, displayName: name, type: 'guest', createdAt: new Date().toISOString() };
-  saveIdentity(id);
-  currentUser = { id: id.id, email: id.email, displayName: name, type: 'guest' };
+  var guest = { id: makeId(), email: name, displayName: name, type: 'guest', createdAt: new Date().toISOString() };
+  localStorage.setItem('text_adventure_guest_identity', JSON.stringify(guest));
+  return guest;
+}
+
+function guestLogin() {
+  var guest = getOrCreateGuestIdentity();
+  saveIdentity(guest);
+  currentUser = { id: guest.id, email: guest.email, displayName: guest.displayName, type: 'guest' };
   supabaseSession = null;
   localStorage.removeItem('text_adventure_session');
 
@@ -197,10 +212,9 @@ async function localRegister(input, password) {
       closeAuthModal();
       toast('注册成功，「' + display + '」已登录 ☁️');
       refreshTitleButtons();
-      if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
       return;
     } else {
-      toast('已发送确认邮件到 ' + display + '，请查收后登录 📧');
+      toast('注册成功但未自动登录，请尝试登录；如果仍失败，请检查 Supabase 是否关闭 Confirm email。');
       closeAuthModal();
       return;
     }
@@ -236,7 +250,6 @@ async function localSignIn(input, password) {
     closeAuthModal();
     toast('已登录云端账号，可跨设备同步存档。');
     refreshTitleButtons();
-    if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
     return;
   }
 
@@ -244,6 +257,7 @@ async function localSignIn(input, password) {
 }
 
 async function signOut() {
+  var wasCloud = !!(currentUser && currentUser.type === 'cloud' && supabaseSession && supabaseSession.access_token);
   // Call Supabase signOut if we have a session
   if (supabaseSession && supabaseSession.access_token) {
     try {
@@ -253,13 +267,21 @@ async function signOut() {
       });
     } catch(e) { /* best-effort */ }
   }
-  var wasCloud = hasCloud();
-  currentUser = null;
   supabaseSession = null;
   localStorage.removeItem('text_adventure_session');
-  updateAuthUI();
-  if (wasCloud) toast('已退出云端账号，请以游客身份继续或登录其他账号。');
-  else toast('已退出登录。');
+
+  if (wasCloud) {
+    // Auto-restore guest identity so user sees their guest saves immediately
+    var guest = getOrCreateGuestIdentity();
+    saveIdentity(guest);
+    currentUser = { id: guest.id, email: guest.email, displayName: guest.displayName, type: 'guest' };
+    updateAuthUI();
+    toast('已退出云端账号，已切回游客模式。');
+  } else {
+    currentUser = null;
+    updateAuthUI();
+    toast('已退出登录。');
+  }
   refreshTitleButtons();
 }
 
@@ -360,7 +382,15 @@ function refreshTitleLocalSaveButtons() {
   if (btnLoadSlot) btnLoadSlot.style.display = hasSlots ? '' : 'none';
 }
 
+function resetTitleSaveButtons() {
+  var btnContinue = document.getElementById('btn-continue');
+  var btnLoadSlot = document.getElementById('btn-load-slot');
+  if (btnContinue) btnContinue.style.display = 'none';
+  if (btnLoadSlot) btnLoadSlot.style.display = 'none';
+}
+
 function refreshTitleButtons() {
+  resetTitleSaveButtons();
   refreshTitleLocalSaveButtons();
   refreshTitleCloudSaveButtons();
   showScreen('title');
@@ -480,7 +510,18 @@ async function cloudSignIn(account, password) {
       supabaseSession = data;
       localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
     }
-    return { ok: true, data: { user: data.user || { id: data.user_id || 'u_' + account, email: account }, session: data } };
+    // Decode real user id from JWT, not fallback
+    var userId = null;
+    if (data.user && data.user.id) { userId = data.user.id; }
+    else if (data.user_id) { userId = data.user_id; }
+    else if (data.access_token) {
+      try {
+        var payload = data.access_token.split('.')[1];
+        var decoded = JSON.parse(atob(payload));
+        userId = decoded.sub;
+      } catch(e) {}
+    }
+    return { ok: true, data: { user: { id: userId, email: account }, session: data } };
   } catch(e) {
     return { ok: false, error: '网络连接失败：' + (e.message || '未知错误') };
   }
@@ -2781,7 +2822,7 @@ function saveGame() {
 
 // Returns account type label for UI
 function accountTypeLabel() {
-  if (hasCloud()) return 'cloud';
+  if (currentUser && currentUser.type === 'cloud' && hasCloud()) return 'cloud';
   return 'guest';
 }
 
