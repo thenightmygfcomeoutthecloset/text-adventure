@@ -28,6 +28,9 @@ supabase/schema.sql → 数据库 schema
 - 不要修改 Supabase schema，只操作现有表结构
 - CSS 变量优先，避免硬编码颜色值
 
+## git 追踪规则
+- *_备份.html、*_backup.html、*.bak → 不追踪，备份文件只存本机
+
 ## 版本号规则
 格式：vMAJOR.MINOR.PATCH「版本代号」
 - PATCH +1：bug 修复、小调整（不新增功能）
