@@ -1,7 +1,29 @@
-# 存档目录只追踪文字冒险游戏项目
-*/
-!2026-05-11_文字冒险游戏/
-*.rar
+# 备份文件
+首页_备份.html
 *_备份.html
 *_backup.html
 *.bak
+
+# 工具脚本
+update_worlds.py
+
+# 存档目录（仅追踪文字冒险游戏）
+2026-05-07_视界域/
+2026-05-10_笔电男大模拟器/
+2026-05-14_豪意值测试/
+gamejam/
+gamejam.rar
+papas-burgeria-demo/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器和 IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.temp/
