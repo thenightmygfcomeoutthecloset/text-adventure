@@ -1862,6 +1862,9 @@ async function sendCommand() {
   scrollToBottom();
   resetSuggestions();
 
+  // Compress conversation history before building API messages
+  state.apiHistory = await compressHistory(state.apiHistory);
+
   // Build API messages
   const systemPrompt = buildSystemPrompt();
   const apiMessages = buildApiMessages(systemPrompt, aiCommand);
@@ -2053,8 +2056,12 @@ function buildApiMessages(systemPrompt, currentCommand) {
   const messages = [{ role: 'system', content: systemPrompt }];
 
   // Add recent history from apiHistory (skip old system prompt)
-  const recentHistory = state.apiHistory.filter(m => m.role !== 'system').slice(-20);
-  messages.push(...recentHistory);
+  const nonSystem = state.apiHistory.filter(m => m.role !== 'system');
+  // Always preserve story summaries so compressed context isn't lost
+  const summaries = nonSystem.filter(m => m.content.startsWith('【故事摘要】'));
+  const regular = nonSystem.filter(m => !m.content.startsWith('【故事摘要】'));
+  messages.push(...summaries);
+  messages.push(...regular.slice(-20));
 
   // Add current command
   messages.push({ role: 'user', content: currentCommand });
@@ -2497,6 +2504,31 @@ function summarizeForPlot(text) {
 
 let _apiHistoryVersion = 0;
 function _bumpApiVersion() { _apiHistoryVersion++; }
+
+async function compressHistory(history) {
+  // Only compress when > 22 messages (system + summary + 20 recent = 22 stable state)
+  if (history.length <= 22) return history;
+
+  const systemMsg = history[0];
+  const toCompress = history.slice(1, history.length - 20);
+  const recentMessages = history.slice(-20);
+
+  const compressSystemPrompt = '你是一个故事摘要助手，将以下对话精炼为300字以内的第三人称故事摘要，保留关键人物、地点、物品、重要事件';
+
+  const compressMessages = [
+    { role: 'system', content: compressSystemPrompt },
+    ...toCompress
+  ];
+
+  try {
+    const summary = await callAPI(compressMessages);
+    const trimmed = summary.trim().slice(0, 350); // ~300 chars but allow slight overflow
+    return [systemMsg, { role: 'user', content: '【故事摘要】' + trimmed }, ...recentMessages];
+  } catch (e) {
+    // Silent degradation — return original history on failure
+    return history;
+  }
+}
 
 async function compressMemory(turnCount) {
   const version = _apiHistoryVersion;
