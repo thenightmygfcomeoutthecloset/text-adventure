@@ -1,3 +1,5 @@
+// ═══════════════════ GAMEJAM CONFIG ═══════════════════
+var GAME_CONFIG = window.GAME_CONFIG || {};
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
 // currentUser.type: 'guest' | 'cloud'
 let currentUser = null; // { id, email, displayName, type }
@@ -776,6 +778,10 @@ function serializeState() {
 
 function deserializeState(save) {
   state.apiKey = localStorage.getItem('text_adventure_apikey') || '';
+  // GameJam: fallback to built-in key when loading saves
+  if (!state.apiKey && GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY) {
+    state.apiKey = GAME_CONFIG.DEEPSEEK_API_KEY;
+  }
   state.worldGenre = save.worldGenre || '';
   state.customWorldDesc = save.customWorldDesc || '';
   state.playerName = save.playerName || '';
@@ -865,10 +871,17 @@ function selectFrequency(freq) {
 }
 
 function goToFreqScreen() {
-  const key = document.getElementById('api-key-input')?.value.trim();
+  var key = document.getElementById('api-key-input')?.value.trim();
+  // GameJam: use built-in key if no manual input
+  if (!key && GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY) {
+    key = GAME_CONFIG.DEEPSEEK_API_KEY;
+  }
   if (!key) { toast('请先输入 DeepSeek API 密钥', 'error'); return; }
   state.apiKey = key;
-  localStorage.setItem('text_adventure_apikey', key);
+  // Only save to localStorage if user typed it manually
+  if (!GAME_CONFIG.JAM_BUILD || !GAME_CONFIG.DEEPSEEK_API_KEY || document.getElementById('api-key-input')?.value.trim()) {
+    localStorage.setItem('text_adventure_apikey', key);
+  }
   showScreen('freq');
 }
 
@@ -1660,28 +1673,12 @@ ${worldState}
 
 // ═══════════════════ API CALL ═══════════════════
 let _activeAbortController = null;
-let _lastFailedCommand = '';
 
 function abortPendingRequest() {
   if (_activeAbortController) {
     _activeAbortController.abort();
     _activeAbortController = null;
   }
-}
-
-async function callWithRetry(fn, maxRetries = 2) {
-  let lastError;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastError = e;
-      if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, attempt === 0 ? 1500 : 3000));
-      }
-    }
-  }
-  throw lastError;
 }
 
 async function callAPI(messages, onStream) {
@@ -1843,7 +1840,7 @@ async function sendCommand() {
     rollResult = rollCheck(actionType);
     const sign = rollResult.modifier >= 0 ? '+' : '';
     const rollText = `🎲 命运判定：${rollResult.d20} / 20${rollResult.modifier !== 0 ? ` (${sign}${rollResult.modifier})` : ''}，${DICE_TIER_NAMES[rollResult.tier]}`;
-    appendRollResult(rollText, rollResult.tier).classList.add('api-pending');
+    appendRollResult(rollText, rollResult.tier);
     aiCommand = `【🎲 命运判定：d20=${rollResult.d20}，修正${sign}${rollResult.modifier}，结果=${rollResult.total}，判定=${DICE_TIER_NAMES[rollResult.tier]}】`;
     var diceInstruction = '';
     if (rollResult.tier === 'critFail') {
@@ -1865,9 +1862,8 @@ async function sendCommand() {
   }
 
   // Show player action in narrative
-  appendPlayerAction(command).classList.add('api-pending');
+  appendPlayerAction(command);
   state.fullHistory.push({ role: 'player', content: command });
-  _lastFailedCommand = command;
 
   // Show thinking indicator
   const narrativeArea = document.getElementById('narrative-area');
@@ -1879,9 +1875,6 @@ async function sendCommand() {
   scrollToBottom();
   resetSuggestions();
 
-  // Compress conversation history before building API messages
-  state.apiHistory = await compressHistory(state.apiHistory);
-
   // Build API messages
   const systemPrompt = buildSystemPrompt();
   const apiMessages = buildApiMessages(systemPrompt, aiCommand);
@@ -1890,11 +1883,11 @@ async function sendCommand() {
     let streamedContent = '';
     const responseEl = createStreamingResponseElement();
 
-    const response = await callWithRetry(() => callAPI(apiMessages, (partial) => {
+    const response = await callAPI(apiMessages, (partial) => {
       streamedContent = partial;
       updateStreamingResponse(responseEl, partial);
       scrollToBottom();
-    }));
+    });
 
     // Finalize — strip relationship annotations from displayed text
     const cleanResponse = stripAnnotations(response);
@@ -1935,22 +1928,13 @@ async function sendCommand() {
     }
   } catch (err) {
     removeThinkingIndicator();
-
     const errEl = document.createElement('div');
-    errEl.className = 'narrative-error';
-
-    let errorText;
-    const errMsg = err.message || '';
-    if (errMsg.includes('账户余额不足') || errMsg.includes('insufficient_balance')) {
-      errorText = 'DeepSeek 余额不足，请充值后继续';
-    } else if (err.name === 'TypeError' || errMsg.includes('超时') || errMsg.includes('网络')) {
-      errorText = '网络连接异常';
-    } else {
-      errorText = '服务暂时不可用';
+    errEl.className = 'narrative-entry';
+    var errMsg = escapeHtml(err.message);
+    if (GAME_CONFIG.JAM_BUILD) {
+      errMsg = '试玩服务暂时不可用，请稍后重试。' + (errMsg ? '（' + errMsg + '）' : '');
     }
-
-    errEl.innerHTML = `<div class="narrative-error-msg">${escapeHtml(errorText)}</div>
-      <button class="narrative-error-retry" onclick="retryLastCommand()">重试</button>`;
+    errEl.innerHTML = `<div class="world-response" style="color:#c47a7a;">世界突然变得模糊起来……${errMsg}</div>`;
     narrativeArea.appendChild(errEl);
     scrollToBottom();
   }
@@ -1960,21 +1944,6 @@ async function sendCommand() {
   document.getElementById('btn-suggest').disabled = false;
   document.getElementById('btn-daredevil').disabled = false;
   input.focus();
-}
-
-function retryLastCommand() {
-  if (!_lastFailedCommand) return;
-
-  // Remove error messages and pending action elements from the failed attempt
-  document.querySelectorAll('.narrative-error, .api-pending').forEach(el => el.remove());
-  // Also roll back fullHistory (last player action was added before the failure)
-  if (state.fullHistory.length > 0 && state.fullHistory[state.fullHistory.length - 1].role === 'player') {
-    state.fullHistory.pop();
-  }
-
-  const input = document.getElementById('command-input');
-  input.value = _lastFailedCommand;
-  sendCommand();
 }
 
 function handlePlayerDeath() {
@@ -2101,12 +2070,8 @@ function buildApiMessages(systemPrompt, currentCommand) {
   const messages = [{ role: 'system', content: systemPrompt }];
 
   // Add recent history from apiHistory (skip old system prompt)
-  const nonSystem = state.apiHistory.filter(m => m.role !== 'system');
-  // Always preserve story summaries so compressed context isn't lost
-  const summaries = nonSystem.filter(m => m.content.startsWith('【故事摘要】'));
-  const regular = nonSystem.filter(m => !m.content.startsWith('【故事摘要】'));
-  messages.push(...summaries);
-  messages.push(...regular.slice(-20));
+  const recentHistory = state.apiHistory.filter(m => m.role !== 'system').slice(-20);
+  messages.push(...recentHistory);
 
   // Add current command
   messages.push({ role: 'user', content: currentCommand });
@@ -2121,7 +2086,6 @@ function appendPlayerAction(command) {
   entry.innerHTML = `<div class="player-action">▸ ${escapeHtml(command)}</div>`;
   document.getElementById('narrative-area').appendChild(entry);
   scrollToBottom();
-  return entry;
 }
 
 function appendRollResult(text, tier) {
@@ -2131,7 +2095,6 @@ function appendRollResult(text, tier) {
   entry.innerHTML = `<div class="dice-roll ${tierClass}">${escapeHtml(text)}</div>`;
   document.getElementById('narrative-area').appendChild(entry);
   scrollToBottom();
-  return entry;
 }
 
 function createStreamingResponseElement() {
@@ -2551,31 +2514,6 @@ function summarizeForPlot(text) {
 
 let _apiHistoryVersion = 0;
 function _bumpApiVersion() { _apiHistoryVersion++; }
-
-async function compressHistory(history) {
-  // Only compress when > 22 messages (system + summary + 20 recent = 22 stable state)
-  if (history.length <= 22) return history;
-
-  const systemMsg = history[0];
-  const toCompress = history.slice(1, history.length - 20);
-  const recentMessages = history.slice(-20);
-
-  const compressSystemPrompt = '你是一个故事摘要助手，将以下对话精炼为300字以内的第三人称故事摘要，保留关键人物、地点、物品、重要事件';
-
-  const compressMessages = [
-    { role: 'system', content: compressSystemPrompt },
-    ...toCompress
-  ];
-
-  try {
-    const summary = await callAPI(compressMessages);
-    const trimmed = summary.trim().slice(0, 350); // ~300 chars but allow slight overflow
-    return [systemMsg, { role: 'user', content: '【故事摘要】' + trimmed }, ...recentMessages];
-  } catch (e) {
-    // Silent degradation — return original history on failure
-    return history;
-  }
-}
 
 async function compressMemory(turnCount) {
   const version = _apiHistoryVersion;
@@ -3212,14 +3150,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target === e.currentTarget) closeOverlay();
   });
 
+  // ── GameJam: apply competition config ──
+  if (GAME_CONFIG.JAM_BUILD) {
+    // Hide API key input if configured
+    if (GAME_CONFIG.HIDE_API_INPUT) {
+      var apiSection = document.getElementById('api-key-section');
+      if (apiSection) { apiSection.style.display = 'none'; }
+    }
+    // Use built-in API key
+    if (GAME_CONFIG.DEEPSEEK_API_KEY) {
+      state.apiKey = GAME_CONFIG.DEEPSEEK_API_KEY;
+    }
+    // Auto guest login for instant play
+    if (GAME_CONFIG.DEFAULT_GUEST_MODE && !currentUser) {
+      guestLogin();
+    }
+  }
+
   // Check for saved game on load (scoped to current identity)
   refreshTitleButtons();
-  // Also restore saved API key if any
-  var savedApiKey = localStorage.getItem('text_adventure_apikey');
-  if (savedApiKey) {
-    state.apiKey = savedApiKey;
-    var apiInput = document.getElementById('api-key-input');
-    if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
+  // Also restore saved API key if any (only if not using GameJam built-in)
+  if (!(GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY)) {
+    var savedApiKey = localStorage.getItem('text_adventure_apikey');
+    if (savedApiKey) {
+      state.apiKey = savedApiKey;
+      var apiInput = document.getElementById('api-key-input');
+      if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
+    }
   }
 
   // Add narrative-end marker

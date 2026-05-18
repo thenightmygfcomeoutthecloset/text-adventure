@@ -1,3 +1,5 @@
+// ═══════════════════ GAMEJAM CONFIG ═══════════════════
+var GAME_CONFIG = window.GAME_CONFIG || {};
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
 // currentUser.type: 'guest' | 'cloud'
 let currentUser = null; // { id, email, displayName, type }
@@ -25,7 +27,12 @@ function getSaveKey(slot) {
 }
 // ── Cloud session helpers ──
 function hasCloud() {
-  return !!(supabaseSession && supabaseSession.access_token);
+  return !!(
+    currentUser &&
+    currentUser.type === 'cloud' &&
+    supabaseSession &&
+    supabaseSession.access_token
+  );
 }
 function getCloudUser() {
   if (!hasCloud()) return null;
@@ -114,11 +121,21 @@ function changeDisplayName() {
   toast('用户名已更新 ✨');
 }
 
-function guestLogin() {
+function getOrCreateGuestIdentity() {
+  var raw = localStorage.getItem('text_adventure_guest_identity');
+  if (raw) {
+    try { return JSON.parse(raw); } catch(e) {}
+  }
   var name = '游客_' + makeId().slice(-4);
-  var id = { id: makeId(), email: name, displayName: name, type: 'guest', createdAt: new Date().toISOString() };
-  saveIdentity(id);
-  currentUser = { id: id.id, email: id.email, displayName: name, type: 'guest' };
+  var guest = { id: makeId(), email: name, displayName: name, type: 'guest', createdAt: new Date().toISOString() };
+  localStorage.setItem('text_adventure_guest_identity', JSON.stringify(guest));
+  return guest;
+}
+
+function guestLogin() {
+  var guest = getOrCreateGuestIdentity();
+  saveIdentity(guest);
+  currentUser = { id: guest.id, email: guest.email, displayName: guest.displayName, type: 'guest' };
   supabaseSession = null;
   localStorage.removeItem('text_adventure_session');
 
@@ -197,7 +214,6 @@ async function localRegister(input, password) {
       closeAuthModal();
       toast('注册成功，「' + display + '」已登录 ☁️');
       refreshTitleButtons();
-      if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
       return;
     } else {
       toast('注册成功但未自动登录，请尝试登录；如果仍失败，请检查 Supabase 是否关闭 Confirm email。');
@@ -236,7 +252,6 @@ async function localSignIn(input, password) {
     closeAuthModal();
     toast('已登录云端账号，可跨设备同步存档。');
     refreshTitleButtons();
-    if (oldIdentity && oldIdentity.id !== suid) migrateSaves(oldIdentity.id, suid);
     return;
   }
 
@@ -244,6 +259,7 @@ async function localSignIn(input, password) {
 }
 
 async function signOut() {
+  var wasCloud = !!(currentUser && currentUser.type === 'cloud' && supabaseSession && supabaseSession.access_token);
   // Call Supabase signOut if we have a session
   if (supabaseSession && supabaseSession.access_token) {
     try {
@@ -253,13 +269,21 @@ async function signOut() {
       });
     } catch(e) { /* best-effort */ }
   }
-  var wasCloud = hasCloud();
-  currentUser = null;
   supabaseSession = null;
   localStorage.removeItem('text_adventure_session');
-  updateAuthUI();
-  if (wasCloud) toast('已退出云端账号，请以游客身份继续或登录其他账号。');
-  else toast('已退出登录。');
+
+  if (wasCloud) {
+    // Auto-restore guest identity so user sees their guest saves immediately
+    var guest = getOrCreateGuestIdentity();
+    saveIdentity(guest);
+    currentUser = { id: guest.id, email: guest.email, displayName: guest.displayName, type: 'guest' };
+    updateAuthUI();
+    toast('已退出云端账号，已切回游客模式。');
+  } else {
+    currentUser = null;
+    updateAuthUI();
+    toast('已退出登录。');
+  }
   refreshTitleButtons();
 }
 
@@ -488,7 +512,18 @@ async function cloudSignIn(account, password) {
       supabaseSession = data;
       localStorage.setItem('text_adventure_session', JSON.stringify(supabaseSession));
     }
-    return { ok: true, data: { user: data.user || { id: data.user_id || 'u_' + account, email: account }, session: data } };
+    // Decode real user id from JWT, not fallback
+    var userId = null;
+    if (data.user && data.user.id) { userId = data.user.id; }
+    else if (data.user_id) { userId = data.user_id; }
+    else if (data.access_token) {
+      try {
+        var payload = data.access_token.split('.')[1];
+        var decoded = JSON.parse(atob(payload));
+        userId = decoded.sub;
+      } catch(e) {}
+    }
+    return { ok: true, data: { user: { id: userId, email: account }, session: data } };
   } catch(e) {
     return { ok: false, error: '网络连接失败：' + (e.message || '未知错误') };
   }
@@ -743,6 +778,10 @@ function serializeState() {
 
 function deserializeState(save) {
   state.apiKey = localStorage.getItem('text_adventure_apikey') || '';
+  // GameJam: fallback to built-in key when loading saves
+  if (!state.apiKey && GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY) {
+    state.apiKey = GAME_CONFIG.DEEPSEEK_API_KEY;
+  }
   state.worldGenre = save.worldGenre || '';
   state.customWorldDesc = save.customWorldDesc || '';
   state.playerName = save.playerName || '';
@@ -832,10 +871,17 @@ function selectFrequency(freq) {
 }
 
 function goToFreqScreen() {
-  const key = document.getElementById('api-key-input')?.value.trim();
+  var key = document.getElementById('api-key-input')?.value.trim();
+  // GameJam: use built-in key if no manual input
+  if (!key && GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY) {
+    key = GAME_CONFIG.DEEPSEEK_API_KEY;
+  }
   if (!key) { toast('请先输入 DeepSeek API 密钥', 'error'); return; }
   state.apiKey = key;
-  localStorage.setItem('text_adventure_apikey', key);
+  // Only save to localStorage if user typed it manually
+  if (!GAME_CONFIG.JAM_BUILD || !GAME_CONFIG.DEEPSEEK_API_KEY || document.getElementById('api-key-input')?.value.trim()) {
+    localStorage.setItem('text_adventure_apikey', key);
+  }
   showScreen('freq');
 }
 
@@ -1884,7 +1930,11 @@ async function sendCommand() {
     removeThinkingIndicator();
     const errEl = document.createElement('div');
     errEl.className = 'narrative-entry';
-    errEl.innerHTML = `<div class="world-response" style="color:#c47a7a;">世界突然变得模糊起来……（${escapeHtml(err.message)}）</div>`;
+    var errMsg = escapeHtml(err.message);
+    if (GAME_CONFIG.JAM_BUILD) {
+      errMsg = '试玩服务暂时不可用，请稍后重试。' + (errMsg ? '（' + errMsg + '）' : '');
+    }
+    errEl.innerHTML = `<div class="world-response" style="color:#c47a7a;">世界突然变得模糊起来……${errMsg}</div>`;
     narrativeArea.appendChild(errEl);
     scrollToBottom();
   }
@@ -2789,7 +2839,7 @@ function saveGame() {
 
 // Returns account type label for UI
 function accountTypeLabel() {
-  if (hasCloud()) return 'cloud';
+  if (currentUser && currentUser.type === 'cloud' && hasCloud()) return 'cloud';
   return 'guest';
 }
 
@@ -3100,14 +3150,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target === e.currentTarget) closeOverlay();
   });
 
+  // ── GameJam: apply competition config ──
+  if (GAME_CONFIG.JAM_BUILD) {
+    // Hide API key input if configured
+    if (GAME_CONFIG.HIDE_API_INPUT) {
+      var apiSection = document.getElementById('api-key-section');
+      if (apiSection) { apiSection.style.display = 'none'; }
+    }
+    // Use built-in API key
+    if (GAME_CONFIG.DEEPSEEK_API_KEY) {
+      state.apiKey = GAME_CONFIG.DEEPSEEK_API_KEY;
+    }
+    // Auto guest login for instant play
+    if (GAME_CONFIG.DEFAULT_GUEST_MODE && !currentUser) {
+      guestLogin();
+    }
+  }
+
   // Check for saved game on load (scoped to current identity)
   refreshTitleButtons();
-  // Also restore saved API key if any
-  var savedApiKey = localStorage.getItem('text_adventure_apikey');
-  if (savedApiKey) {
-    state.apiKey = savedApiKey;
-    var apiInput = document.getElementById('api-key-input');
-    if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
+  // Also restore saved API key if any (only if not using GameJam built-in)
+  if (!(GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY)) {
+    var savedApiKey = localStorage.getItem('text_adventure_apikey');
+    if (savedApiKey) {
+      state.apiKey = savedApiKey;
+      var apiInput = document.getElementById('api-key-input');
+      if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
+    }
   }
 
   // Add narrative-end marker
