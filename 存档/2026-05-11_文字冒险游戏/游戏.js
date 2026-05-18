@@ -748,6 +748,23 @@ let state = {
 
 // ═══════════════════ PERSISTENCE ═══════════════════
 function serializeState() {
+  // Extract narrative preview from the last AI response in the DOM
+  var preview = '';
+  var narrativeArea = document.getElementById('narrative-area');
+  if (narrativeArea) {
+    var worldResponses = narrativeArea.querySelectorAll('.world-response');
+    if (worldResponses.length > 0) {
+      var lastResp = worldResponses[worldResponses.length - 1];
+      var text = lastResp.textContent || lastResp.innerText || '';
+      preview = text.replace(/\s+/g, ' ').trim().slice(0, 60);
+    }
+  }
+  // Count user turns
+  var turnCount = 0;
+  if (state.apiHistory) {
+    turnCount = state.apiHistory.filter(function (m) { return m.role === 'user'; }).length;
+  }
+
   return {
     worldGenre: state.worldGenre,
     customWorldDesc: state.customWorldDesc,
@@ -771,6 +788,11 @@ function serializeState() {
     critSuccessCount: state.critSuccessCount || 0,
     activeFrequency: state.activeFrequency || 'male',
     savedAt: new Date().toISOString(),
+    // Extended save info for rich save cards
+    worldName: state.worldGenre || '',
+    charGender: (state.characterSheet && state.characterSheet.gender) || '',
+    turnCount: turnCount,
+    preview: preview,
   };
 }
 
@@ -916,6 +938,21 @@ function showScreen(name) {
   if (name === 'game') {
     updateStatsBar();
     document.getElementById('command-input').focus();
+    // Mobile: keyboard-aware input dock
+    if (window.visualViewport) {
+      _visualViewportHandler = function () {
+        var dock = document.getElementById('input-dock');
+        if (!dock) return;
+        var offsetY = window.innerHeight - window.visualViewport.height;
+        dock.style.transform = 'translateY(-' + offsetY + 'px)';
+      };
+      window.visualViewport.addEventListener('resize', _visualViewportHandler);
+    }
+  } else if (oldScreen === 'game' && _visualViewportHandler) {
+    window.visualViewport.removeEventListener('resize', _visualViewportHandler);
+    _visualViewportHandler = null;
+    var dock = document.getElementById('input-dock');
+    if (dock) dock.style.transform = '';
   }
 
   if (name === 'title') {
@@ -1661,6 +1698,7 @@ ${worldState}
 // ═══════════════════ API CALL ═══════════════════
 let _activeAbortController = null;
 let _lastFailedCommand = '';
+let _visualViewportHandler = null;
 
 function abortPendingRequest() {
   if (_activeAbortController) {
@@ -2197,9 +2235,12 @@ function renderFullHistory() {
 }
 
 function scrollToBottom() {
-  requestAnimationFrame(() => {
-    const area = document.getElementById('narrative-area');
-    if (area) area.scrollTop = area.scrollHeight;
+  requestAnimationFrame(function () {
+    var area = document.getElementById('narrative-area');
+    if (!area) return;
+    area.scrollTop = area.scrollHeight;
+    var lastNode = area.lastElementChild;
+    if (lastNode) lastNode.scrollIntoView({ behavior: 'smooth', block: 'end' });
   });
 }
 
@@ -2996,9 +3037,14 @@ async function getSlotInfo(n, opt_cloudSlots) {
     if (slots) {
       var cs = slots.find(function(s) { return s.slot === n; });
       if (cs) {
+        var sdata = cs.save_data ? (typeof cs.save_data === 'string' ? JSON.parse(cs.save_data) : cs.save_data) : {};
         cloudInfo = {
           playerName: cs.character_name || '???',
           worldGenre: cs.world_name || '???',
+          worldName: sdata.worldName || cs.world_name || '—',
+          charGender: sdata.charGender || (sdata.characterSheet && sdata.characterSheet.gender) || '—',
+          turnCount: sdata.turnCount !== undefined ? sdata.turnCount : '—',
+          preview: sdata.preview || '',
           level: 1,
           savedAt: cs.updated_at || '',
           source: 'cloud',
@@ -3017,6 +3063,10 @@ async function getSlotInfo(n, opt_cloudSlots) {
         localInfo = {
           playerName: s.playerName || '???',
           worldGenre: s.worldGenre || '???',
+          worldName: s.worldName || s.worldGenre || '—',
+          charGender: s.charGender || (s.characterSheet && s.characterSheet.gender) || '—',
+          turnCount: s.turnCount !== undefined ? s.turnCount : '—',
+          preview: s.preview || '',
           level: (s.stats && s.stats.level) ? s.stats.level : 1,
           savedAt: s.savedAt || '',
           source: 'local',
@@ -3098,8 +3148,20 @@ async function showSaveManager() {
     html += '<div class="save-slot' + (info ? '' : ' empty') + '">';
     html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : (info ? ' 💻' : '')) + '</div>';
     if (info) {
-      html += '<div class="slot-info">' + escapeHtml(info.playerName) + ' <span>|</span> ' + escapeHtml(info.worldGenre) + '</div>';
-      html += '<div class="slot-time">' + formatSaveTime(info.savedAt) + (info.source === 'cloud' ? ' · 云端' : ' · 本地') + '</div>';
+      var charGender = info.charGender || '—';
+      var world = escapeHtml(info.worldName || info.worldGenre || '—');
+      var charName = escapeHtml(info.playerName);
+      var genderLabel = escapeHtml(charGender);
+      html += '<div class="slot-header">';
+      html += '<span class="slot-world">' + world + '</span>';
+      html += '<span class="slot-char">' + charName + ' · ' + genderLabel + '</span>';
+      html += '</div>';
+      if (info.preview) {
+        html += '<div class="slot-preview">' + escapeHtml(info.preview) + '</div>';
+      }
+      var turnText = info.turnCount !== '—' ? '第 ' + info.turnCount + ' 轮' : '';
+      var timeText = info.savedAt ? formatSaveTimeShort(info.savedAt) : '';
+      html += '<div class="slot-meta">' + (turnText ? turnText + ' · ' : '') + timeText + (info.source === 'cloud' ? ' · 云端' : ' · 本地') + '</div>';
       html += '<div class="slot-actions">';
       html += '<button class="load-btn" onclick="loadSlot(' + i + ')">📂 读取</button>';
       html += '<button class="save-btn" onclick="saveToSlot(' + i + ')">💾 覆盖</button>';
@@ -3130,6 +3192,13 @@ function formatSaveTime(iso) {
   var d = new Date(iso);
   if (isNaN(d.getTime())) return '';
   return d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+         String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+function formatSaveTimeShort(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return (d.getMonth()+1) + '月' + d.getDate() + '日 ' +
          String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 }
 function escapeHtml(str) {
@@ -3227,19 +3296,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   endMarker.id = 'narrative-end';
   document.getElementById('narrative-area').appendChild(endMarker);
 
-  // Mobile: prevent soft keyboard from obscuring input area
-  if (window.visualViewport) {
-    const gameScreen = document.getElementById('game-screen');
-    window.visualViewport.addEventListener('resize', () => {
-      const vh = window.visualViewport.height;
-      const wh = window.innerHeight;
-      if (vh < wh - 80) {
-        gameScreen.style.height = vh + 'px';
-      } else {
-        gameScreen.style.height = '';
-      }
-    });
-  }
+  // Keyboard-aware input dock is managed in showScreen() via visualViewport resize
 });
 
 // ═══════════════════ EXPORT STORY ═══════════════════
