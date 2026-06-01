@@ -845,28 +845,19 @@ function selectFrequency(freq) {
   if (cd) cd.classList.add('hidden');
   if (ab) ab.classList.add('hidden');
   if (na) na.classList.add('hidden');
+
+  // Apply grid visibility BEFORE showScreen so GSAP sees the cards
+  const isMale = freq === 'male';
+  const gridMale = document.getElementById('grid-male');
+  const gridFemale = document.getElementById('grid-female');
+  const tabCommon = document.getElementById('tab-common-world');
+  const randomBtn = document.querySelector('#world-screen .btn-random-all');
+  if (gridMale) gridMale.style.display = isMale ? 'grid' : 'none';
+  if (gridFemale) gridFemale.style.display = isMale ? 'none' : 'grid';
+  if (tabCommon) tabCommon.style.display = 'none';
+  if (randomBtn) randomBtn.style.display = '';
+
   showScreen('world');
-  const worldScreen = document.getElementById('world-screen');
-  const applyFreqGrids = () => {
-    const gridMale = document.getElementById('grid-male');
-    const gridFemale = document.getElementById('grid-female');
-    const tabCommon = document.getElementById('tab-common-world');
-    const randomBtn = document.querySelector('#world-screen .btn-random-all');
-    const worldLabel = document.getElementById('world-freq-label');
-    const isMale = freq === 'male';
-    if (gridMale) gridMale.style.display = isMale ? 'grid' : 'none';
-    if (gridFemale) gridFemale.style.display = isMale ? 'none' : 'grid';
-    if (tabCommon) tabCommon.style.display = 'none';
-    if (randomBtn) randomBtn.style.display = '';
-    if (worldLabel) worldLabel.textContent = isMale ? '男频世界' : '女频世界';
-  };
-  // GSAP mode: no CSS transition, apply after screen-in animation completes
-  if (typeof gsapScreenIn === 'function') {
-    setTimeout(applyFreqGrids, 450);
-  } else {
-    worldScreen.removeEventListener('transitionend', applyFreqGrids);
-    worldScreen.addEventListener('transitionend', applyFreqGrids, { once: true });
-  }
 }
 
 function goToFreqScreen() {

@@ -46,10 +46,12 @@
     gsap.to(el, { opacity:1, scale:1, duration:0.42, ease:'power2.out',
       onComplete: function() { if (cb) cb(); }
     });
-    // Stagger child cards
-    gsap.from(el.querySelectorAll('.freq-card, .genre-card:not(.hidden)'), {
-      opacity:0, y:20, duration:0.4, stagger:0.04, ease:'power2.out', delay:0.15
-    });
+    // Stagger child cards — use set+to (not from) to avoid capturing hidden state
+    var cards = el.querySelectorAll('.freq-card, .genre-card:not(.hidden)');
+    if (cards.length) {
+      gsap.set(cards, { opacity:0, y:20 });
+      gsap.to(cards, { opacity:1, y:0, duration:0.4, stagger:0.04, ease:'power2.out', delay:0.15 });
+    }
   };
 
   // ═══════════════════ OVERLAY ANIMATION ═══════════════════
