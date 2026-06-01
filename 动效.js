@@ -34,7 +34,6 @@
     gsap.killTweensOf(el);
     gsap.set(el, { clearProps: 'all' });
     el.classList.remove('hidden');
-    // 确保浏览器在添加 active 前完成布局
     void el.offsetWidth;
     el.classList.add('active');
     gsap.fromTo(el,
@@ -47,10 +46,9 @@
 
   // ═══════════════════ TOAST ═══════════════════
   (function() {
-    var _orig = window.toast;
     window.toast = function(msg, type) {
       var el = document.getElementById('toast');
-      if (!el) { if (_orig) _orig(msg, type); return; }
+      if (!el) return;
       clearTimeout(el._timeout);
       gsap.killTweensOf(el);
       el.textContent = msg;
@@ -75,5 +73,71 @@
     });
   };
 
-  console.log('GSAP v1 — 屏幕切换 + Toast + 滚动');
+  // ═══════════════════ NARRATIVE ENTRY FADE-IN ═══════════════════
+  (function() {
+    var area = document.getElementById('narrative-area');
+    if (!area) return;
+    var observer = new MutationObserver(function(ms) {
+      ms.forEach(function(m) {
+        m.addedNodes.forEach(function(node) {
+          if (node.nodeType !== 1) return;
+          if (node.classList.contains('narrative-entry')) {
+            gsap.fromTo(node, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.35, ease: 'power2.out' });
+          } else if (node.classList.contains('world-thinking')) {
+            gsap.fromTo(node, { opacity: 0 }, { opacity: 1, duration: 0.25 });
+          } else if (node.classList.contains('narrative-error')) {
+            gsap.fromTo(node, { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' });
+          } else if (node.classList.contains('scene-title')) {
+            gsap.fromTo(node, { opacity: 0 }, { opacity: 1, duration: 0.6, ease: 'power2.out' });
+          }
+        });
+      });
+    });
+    observer.observe(area, { childList: true });
+  })();
+
+  // ═══════════════════ OVERLAY FADE IN/OUT ═══════════════════
+  (function() {
+    var overlay = document.getElementById('overlay');
+    if (!overlay) return;
+    var observer = new MutationObserver(function(ms) {
+      ms.forEach(function(m) {
+        if (m.attributeName !== 'class') return;
+        var panel = overlay.querySelector('.overlay-panel');
+        if (overlay.classList.contains('hidden')) {
+          gsap.killTweensOf(overlay);
+          if (panel) { gsap.killTweensOf(panel); gsap.set(panel, { clearProps: 'all' }); }
+          gsap.set(overlay, { clearProps: 'all' });
+        } else {
+          gsap.killTweensOf(overlay);
+          if (panel) { gsap.killTweensOf(panel); gsap.set(panel, { clearProps: 'all' }); }
+          gsap.fromTo(overlay, { opacity: 0 }, { opacity: 1, duration: 0.2, ease: 'power2.out' });
+          if (panel) {
+            gsap.fromTo(panel, { scale: 0.92, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'power2.out' });
+          }
+        }
+      });
+    });
+    observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+  })();
+
+  // ═══════════════════ ACHIEVEMENT POPUP ═══════════════════
+  (function() {
+    var ap = document.getElementById('achievement-popup');
+    if (!ap) return;
+    var observer = new MutationObserver(function(ms) {
+      ms.forEach(function(m) {
+        if (m.target.classList.contains('hidden')) {
+          gsap.to(m.target, { x: 'calc(100% + 30px)', duration: 0.35, ease: 'power2.in',
+            onComplete: function() { gsap.set(m.target, { clearProps: 'all' }); }
+          });
+        } else {
+          gsap.fromTo(m.target, { x: 'calc(100% + 30px)' }, { x: 0, duration: 0.5, ease: 'back.out(1.3)' });
+        }
+      });
+    });
+    observer.observe(ap, { attributes: true, attributeFilter: ['class'] });
+  })();
+
+  console.log('GSAP v2 — 屏幕 + Toast + 滚动 + 叙事 + Overlay + 成就');
 })();
