@@ -62,23 +62,48 @@
       var overlay = m.target;
       var panel = overlay.querySelector('.overlay-panel');
       if (overlay.classList.contains('hidden')) {
-        gsap.to(overlay, { opacity:0, duration:0.2, ease:'power2.in',
-          onComplete: function() { gsap.set(overlay, { clearProps:'all' }); }
+        // Animate out, then clean up
+        if (panel) { gsap.killTweensOf(panel); }
+        gsap.killTweensOf(overlay);
+        var tl = gsap.timeline({
+          onComplete: function() {
+            gsap.set(overlay, { clearProps:'all' });
+            if (panel) gsap.set(panel, { clearProps:'all' });
+          }
         });
-        if (panel) gsap.to(panel, { scale:0.94, duration:0.2, ease:'power2.in' });
+        if (panel) tl.to(panel, { scale:0.94, duration:0.18, ease:'power2.in' }, 0);
+        tl.to(overlay, { opacity:0, duration:0.22, ease:'power2.in' }, 0);
       } else {
+        // Clean stale state, then animate in
+        gsap.killTweensOf(overlay);
+        if (panel) { gsap.killTweensOf(panel); gsap.set(panel, { clearProps:'all' }); }
         gsap.set(overlay, { opacity:0 });
-        gsap.to(overlay, { opacity:1, duration:0.25, ease:'power2.out' });
+        gsap.to(overlay, { opacity:1, duration:0.22, ease:'power2.out' });
         if (panel) {
-          gsap.fromTo(panel, { scale:0.9, opacity:0 }, { scale:1, opacity:1, duration:0.35, ease:'back.out(1.4)' });
+          gsap.fromTo(panel, { scale:0.92, opacity:0 }, { scale:1, opacity:1, duration:0.3, ease:'back.out(1.3)' });
         }
-        // Stagger child items inside overlay panel
-        gsap.from(overlay.querySelectorAll('.save-slot, .bond-card, .ach-card, .annals-chapter, .item-list li'), {
-          opacity:0, y:12, duration:0.3, stagger:0.04, ease:'power2.out', delay:0.2
-        });
+        // Stagger child items
+        var children = overlay.querySelectorAll('.save-slot, .bond-card, .ach-card, .annals-chapter, .item-list li');
+        if (children.length) {
+          gsap.set(children, { opacity:0, y:12 });
+          gsap.to(children, { opacity:1, y:0, duration:0.3, stagger:0.04, ease:'power2.out', delay:0.22 });
+        }
       }
     });
   });
+
+  // Re-trigger stagger when overlay content is replaced (e.g. save manager async load)
+  var _overlayContentObserver = new MutationObserver(function() {
+    var overlay = document.getElementById('overlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    var children = overlay.querySelectorAll('.save-slot, .bond-card, .ach-card, .annals-chapter, .item-list li');
+    if (children.length) {
+      gsap.set(children, { opacity:0, y:12 });
+      gsap.to(children, { opacity:1, y:0, duration:0.3, stagger:0.04, ease:'power2.out' });
+    }
+  });
+  var oc = document.getElementById('overlay-content');
+  if (oc) _overlayContentObserver.observe(oc, { childList:true, subtree:true });
   var ov = document.getElementById('overlay');
   if (ov) _overlayObserver.observe(ov, { attributes:true, attributeFilter:['class'] });
 
