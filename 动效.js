@@ -58,20 +58,18 @@
       if (m.target.id !== 'overlay') return;
       if (m.attributeName !== 'class') return;
       var overlay = m.target;
+      var panel = overlay.querySelector('.overlay-panel');
       if (overlay.classList.contains('hidden')) {
         gsap.to(overlay, { opacity:0, duration:0.2, ease:'power2.in',
           onComplete: function() { gsap.set(overlay, { clearProps:'all' }); }
         });
-        gsap.to(overlay.querySelector('.overlay-panel'), {
-          scale:0.94, duration:0.2, ease:'power2.in'
-        });
+        if (panel) gsap.to(panel, { scale:0.94, duration:0.2, ease:'power2.in' });
       } else {
         gsap.set(overlay, { opacity:0 });
         gsap.to(overlay, { opacity:1, duration:0.25, ease:'power2.out' });
-        gsap.fromTo(overlay.querySelector('.overlay-panel'),
-          { scale:0.9, opacity:0 },
-          { scale:1, opacity:1, duration:0.35, ease:'back.out(1.4)' }
-        );
+        if (panel) {
+          gsap.fromTo(panel, { scale:0.9, opacity:0 }, { scale:1, opacity:1, duration:0.35, ease:'back.out(1.4)' });
+        }
         // Stagger child items inside overlay panel
         gsap.from(overlay.querySelectorAll('.save-slot, .bond-card, .ach-card, .annals-chapter, .item-list li'), {
           opacity:0, y:12, duration:0.3, stagger:0.04, ease:'power2.out', delay:0.2
@@ -88,7 +86,6 @@
       m.addedNodes.forEach(function(node) {
         if (!node.nodeType || node.nodeType !== 1) return;
         if (node.classList.contains('narrative-entry')) {
-          // Check for dice roll — more dramatic animation
           var diceEl = node.querySelector('.dice-roll');
           if (diceEl) {
             gsap.from(node, { opacity:0, duration:0.2, onComplete: function() {
@@ -104,7 +101,6 @@
         if (node.classList && node.classList.contains('narrative-error')) {
           gsap.from(node, { opacity:0, x:-20, duration:0.35, ease:'power2.out' });
         }
-        // Scene title
         if (node.classList && node.classList.contains('scene-title')) {
           gsap.from(node, { opacity:0, letterSpacing:'15px', duration:0.8, ease:'power2.out' });
         }
@@ -117,15 +113,14 @@
   // ═══════════════════ SUGGESTION BUTTONS STAGGER ═══════════════════
   var _suggObserver = new MutationObserver(function(ms) {
     ms.forEach(function(m) {
+      var added = false;
       m.addedNodes.forEach(function(node) {
-        if (!node.nodeType || node.nodeType !== 1) return;
-        if (node.classList && node.classList.contains('suggestion-btn')) {
-          gsap.from(node, { opacity:0, y:8, scale:0.9, duration:0.3, ease:'back.out(1.5)' });
+        if (node.nodeType === 1 && node.classList && node.classList.contains('suggestion-btn')) {
+          added = true;
         }
       });
-      // Stagger all visible suggestion buttons when batch-added
-      var buttons = m.target.querySelectorAll('.suggestion-btn');
-      if (buttons.length > 1 && m.addedNodes.length > 1) {
+      if (added) {
+        var buttons = m.target.querySelectorAll('.suggestion-btn');
         gsap.from(buttons, { opacity:0, y:8, duration:0.3, stagger:0.05, ease:'power2.out' });
       }
     });
@@ -156,15 +151,19 @@
       var panel = modal.querySelector('.login-modal-panel');
       var bg = modal.querySelector('.login-modal-bg');
       if (modal.classList.contains('hidden')) {
-        gsap.to(panel, { scale:0.9, opacity:0, duration:0.2, ease:'power2.in' });
-        gsap.to(bg, { opacity:0, duration:0.2, ease:'power2.in',
-          onComplete: function() { gsap.set(panel, { clearProps:'all' }); gsap.set(bg, { clearProps:'all' }); }
+        if (panel) gsap.to(panel, { scale:0.9, opacity:0, duration:0.2, ease:'power2.in' });
+        if (bg) gsap.to(bg, { opacity:0, duration:0.2, ease:'power2.in',
+          onComplete: function() {
+            if (panel) gsap.set(panel, { clearProps:'all' });
+            if (bg) gsap.set(bg, { clearProps:'all' });
+          }
         });
       } else {
-        gsap.set(bg, { opacity:0 });
-        gsap.set(panel, { scale:0.85, opacity:0 });
-        gsap.to(bg, { opacity:1, duration:0.2, ease:'power2.out' });
-        gsap.to(panel, { scale:1, opacity:1, duration:0.35, ease:'back.out(1.5)', delay:0.05 });
+        if (bg) { gsap.set(bg, { opacity:0 }); gsap.to(bg, { opacity:1, duration:0.2, ease:'power2.out' }); }
+        if (panel) {
+          gsap.set(panel, { scale:0.85, opacity:0 });
+          gsap.to(panel, { scale:1, opacity:1, duration:0.35, ease:'back.out(1.5)', delay:0.05 });
+        }
       }
     });
   });
@@ -258,34 +257,49 @@
   }
 
   // ═══════════════════ BUTTON MICRO-INTERACTIONS ═══════════════════
-  document.addEventListener('mouseenter', function(e) {
+  document.addEventListener('mouseover', function(e) {
     var btn = e.target.closest('button:not(.ghost):not(.btn-back):not(.cc-random):not(.btn-random-all)');
     if (!btn || btn.disabled) return;
     if (btn.closest('.stats-actions')) return;
-    gsap.to(btn, { scale:1.03, duration:0.2, ease:'power2.out' });
+    if (btn._hovered) return;
+    btn._hovered = true;
+    gsap.to(btn, { scale:1.03, duration:0.2, ease:'power2.out', overwrite:'auto' });
   }, true);
 
-  document.addEventListener('mouseleave', function(e) {
+  document.addEventListener('mouseout', function(e) {
     var btn = e.target.closest('button:not(.ghost):not(.btn-back)');
-    if (!btn || btn.disabled) return;
-    gsap.to(btn, { scale:1, duration:0.25, ease:'elastic.out(1, 0.4)' });
+    if (!btn) return;
+    // Only reset if mouse actually left the button
+    if (btn.contains(e.relatedTarget)) return;
+    btn._hovered = false;
+    gsap.to(btn, { scale:1, duration:0.25, ease:'power2.out', overwrite:'auto' });
   }, true);
 
   document.addEventListener('mousedown', function(e) {
     var btn = e.target.closest('button');
     if (!btn || btn.disabled) return;
     if (btn.closest('.stats-actions')) return;
-    gsap.to(btn, { scale:0.96, duration:0.08, ease:'power2.in' });
+    gsap.to(btn, { scale:0.96, duration:0.08, ease:'power2.in', overwrite:'auto' });
   }, true);
 
   document.addEventListener('mouseup', function(e) {
     var btn = e.target.closest('button');
     if (!btn || btn.disabled) return;
-    gsap.to(btn, { scale:1, duration:0.2, ease:'elastic.out(1, 0.4)' });
+    gsap.to(btn, { scale:1, duration:0.2, ease:'power2.out', overwrite:'auto' });
   }, true);
 
-  // ═══════════════════ CARD CLICK RIPPLE ═══════════════════
+  // ═══════════════════ CLICK EFFECTS (ripple + option select pop) ═══════════════════
   document.addEventListener('click', function(e) {
+    // Character option select pop
+    var opt = e.target.closest('.cc-option, .gender-option');
+    if (opt && !opt.classList.contains('selected')) {
+      setTimeout(function() {
+        if (opt.classList.contains('selected')) {
+          gsap.fromTo(opt, { scale:0.92 }, { scale:1, duration:0.35, ease:'back.out(1.6)' });
+        }
+      }, 0);
+    }
+    // Card click ripple
     var card = e.target.closest('.freq-card, .genre-card, .cc-option, .gender-option, .save-slot:not(.empty)');
     if (!card) return;
     var ripple = document.createElement('span');
@@ -307,7 +321,7 @@
     });
   });
 
-  // ═══════════════════ GAME SCREEN - COMMAND INPUT FOCUS GLOW ═══════════════════
+  // ═══════════════════ COMMAND INPUT EFFECTS (focus glow + send button pulse) ═══════════════════
   var _cmdInput = document.getElementById('command-input');
   if (_cmdInput) {
     _cmdInput.addEventListener('focus', function() {
@@ -316,6 +330,17 @@
     _cmdInput.addEventListener('blur', function() {
       gsap.to(_cmdInput, { boxShadow:'0 0 0 0px rgba(212,175,55,0)', duration:0.3, ease:'power2.out' });
     });
+    _cmdInput.addEventListener('input', function() {
+      var btn = document.getElementById('btn-send');
+      if (!btn) return;
+      if (_cmdInput.value.trim().length > 0 && !btn._pulsed) {
+        btn._pulsed = true;
+        gsap.fromTo(btn, { boxShadow:'0 0 0px rgba(212,175,55,0)' }, { boxShadow:'0 0 16px rgba(212,175,55,0.25)', duration:0.4, ease:'power2.out' });
+      } else if (_cmdInput.value.trim().length === 0 && btn._pulsed) {
+        btn._pulsed = false;
+        gsap.to(btn, { boxShadow:'0 0 0px rgba(212,175,55,0)', duration:0.3, ease:'power2.out' });
+      }
+    });
   }
 
   // ═══════════════════ NARRATIVE SMOOTH SCROLL ═══════════════════
@@ -323,7 +348,7 @@
     var area = document.getElementById('narrative-area');
     if (!area) return;
     var target = area.scrollHeight - area.clientHeight;
-    gsap.to(area, { scrollTop:target, duration:0.5, ease:'power2.out' });
+    gsap.to(area, { scrollTop:target, duration:0.5, ease:'power2.out', overwrite:'auto' });
   };
 
   // ═══════════════════ STATS BAR - VALUE CHANGE POP ═══════════════════
@@ -332,38 +357,8 @@
     gsap.fromTo(el, { scale:1.4, color:'#e8dfcc' }, { scale:1, color:'', duration:0.5, ease:'elastic.out(1, 0.5)' });
   };
 
-  // ═══════════════════ CHARACTER OPTION SELECT POP ═══════════════════
-  document.addEventListener('click', function(e) {
-    var opt = e.target.closest('.cc-option, .gender-option');
-    if (!opt || opt.classList.contains('selected')) return;
-    // Delay to let the 'selected' class be applied first
-    setTimeout(function() {
-      if (opt.classList.contains('selected')) {
-        gsap.fromTo(opt, { scale:0.92 }, { scale:1, duration:0.35, ease:'back.out(1.6)' });
-      }
-    }, 0);
-  });
-
-  // ═══════════════════ SEND BUTTON PULSE ON INPUT ═══════════════════
-  var _cmdInput2 = document.getElementById('command-input');
-  if (_cmdInput2) {
-    _cmdInput2.addEventListener('input', function() {
-      var btn = document.getElementById('btn-send');
-      if (!btn) return;
-      if (_cmdInput2.value.trim().length > 0 && !btn._pulsed) {
-        btn._pulsed = true;
-        gsap.fromTo(btn, { boxShadow:'0 0 0px rgba(212,175,55,0)' }, { boxShadow:'0 0 16px rgba(212,175,55,0.25)', duration:0.4, ease:'power2.out' });
-      } else if (_cmdInput2.value.trim().length === 0 && btn._pulsed) {
-        btn._pulsed = false;
-        gsap.to(btn, { boxShadow:'0 0 0px rgba(212,175,55,0)', duration:0.3, ease:'power2.out' });
-      }
-    });
-  }
-
   // ═══════════════════ INIT ═══════════════════
   createTitleParticles();
-
-  // Title entrance on first load
   titleEntrance();
 
   // Re-init particles and entrance when returning to title
