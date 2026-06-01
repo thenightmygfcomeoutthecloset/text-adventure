@@ -880,19 +880,27 @@ function showScreen(name) {
   // Transition-out current screen
   const currentEl = document.getElementById(oldScreen + '-screen');
   if (currentEl) {
-    currentEl.classList.remove('active');
-    clearTimeout(currentEl._hideTimeout);
-    currentEl._hideTimeout = setTimeout(() => {
-      currentEl.classList.add('hidden');
-    }, 310);
+    if (typeof gsapScreenOut === 'function') {
+      gsapScreenOut(oldScreen);
+    } else {
+      currentEl.classList.remove('active');
+      clearTimeout(currentEl._hideTimeout);
+      currentEl._hideTimeout = setTimeout(() => {
+        currentEl.classList.add('hidden');
+      }, 310);
+    }
   }
 
   // Transition-in new screen
   const screenEl = document.getElementById(name + '-screen');
   if (screenEl) {
-    screenEl.classList.remove('hidden');
-    void screenEl.offsetWidth;
-    screenEl.classList.add('active');
+    if (typeof gsapScreenIn === 'function') {
+      gsapScreenIn(name);
+    } else {
+      screenEl.classList.remove('hidden');
+      void screenEl.offsetWidth;
+      screenEl.classList.add('active');
+    }
     clearTimeout(screenEl._hideTimeout);
   }
 
@@ -2197,6 +2205,10 @@ function renderFullHistory() {
 }
 
 function scrollToBottom() {
+  if (typeof gsapScrollToBottom === 'function') {
+    gsapScrollToBottom();
+    return;
+  }
   requestAnimationFrame(() => {
     const area = document.getElementById('narrative-area');
     if (area) area.scrollTop = area.scrollHeight;
@@ -2633,6 +2645,10 @@ function updateStatsBar() {
     }
   } else if (destinyEl) {
     destinyEl.style.display = 'none';
+  }
+  // GSAP stat pop animation
+  if (typeof gsapStatPop === 'function') {
+    container.querySelectorAll('.val').forEach(function(el) { gsapStatPop(el); });
   }
 }
 
