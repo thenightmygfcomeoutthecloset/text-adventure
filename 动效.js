@@ -1,122 +1,45 @@
-// 动效.js — GSAP 动画模块（精简版）
-// 为异界卷 · 文字冒险添加丝滑动效
+// 动效.js — GSAP 动画模块
+// 调试模式：零动画 stub，验证基础功能
 (function() {
   'use strict';
 
-  if (typeof gsap === 'undefined') return;
+  if (typeof gsap === 'undefined') {
+    console.warn('GSAP 未加载，动效模块跳过');
+    return;
+  }
 
-  // ═══════════════════ DISABLE CONFLICTING CSS TRANSITIONS ═══════════════════
-  var styleEl = document.createElement('style');
-  styleEl.textContent = [
-    '.gsap-ready .screen{transition:none!important}',
-    '.gsap-ready #toast{transition:none!important}',
-    '.gsap-ready .overlay{transition:none!important}',
-    '.gsap-ready .overlay-panel{transition:none!important}',
-    '.gsap-ready .achievement-popup{transition:none!important}',
-    '.gsap-ready .freq-card{transition:none!important}',
-    '.gsap-ready .genre-card{transition:none!important}',
-    '.gsap-ready .cc-option{transition:none!important}',
-    '.gsap-ready .gender-option{transition:none!important}'
-  ].join(';');
-  document.head.appendChild(styleEl);
-  document.body.classList.add('gsap-ready');
+  // 不加 gsap-ready 类，保留 CSS transition 正常工作
+  // 这样当 gsapScreenIn/Out 函数存在时，showScreen 走 GSAP 路径
+  // 但我们提供的 stub 只做 DOM 操作，不动 opacity
 
-  // ═══════════════════ SCREEN TRANSITION ═══════════════════
+  // ═══════════════════ SCREEN TRANSITION (STUB) ═══════════════════
   window.gsapScreenOut = function(oldName, cb) {
     var el = document.getElementById(oldName + '-screen');
     if (!el) { if (cb) cb(); return; }
-    gsap.killTweensOf(el);
-    gsap.to(el, { opacity:0, scale:0.97, duration:0.25, ease:'power2.in',
-      onComplete: function() {
-        el.classList.remove('active');
-        el.classList.add('hidden');
-        gsap.set(el, { clearProps:'all' });
-        if (cb) cb();
-      }
-    });
+    el.classList.remove('active');
+    el.classList.add('hidden');
+    if (cb) cb();
   };
 
   window.gsapScreenIn = function(name, cb) {
     var el = document.getElementById(name + '-screen');
     if (!el) { if (cb) cb(); return; }
-    gsap.killTweensOf(el);
     el.classList.remove('hidden');
-    gsap.set(el, { opacity:0, scale:0.98 });
+    // 不加 active 类 — 让 CSS transition 自然触发 opacity 过渡
+    // 但 showScreen 原本就会加 active，这里我们依赖 showScreen 的 else 分支逻辑
+    // 实际上 showScreen 调用 gsapScreenIn 时就不会再走 else 分支
+    // 所以需要在这里手动加 active
+    void el.offsetWidth;
     el.classList.add('active');
-    gsap.to(el, { opacity:1, scale:1, duration:0.35, ease:'power2.out',
-      onComplete: function() { if (cb) cb(); }
-    });
+    if (cb) cb();
   };
 
-  // ═══════════════════ OVERLAY ANIMATION ═══════════════════
-  var _overlayObserver = new MutationObserver(function(ms) {
-    ms.forEach(function(m) {
-      if (m.target.id !== 'overlay') return;
-      if (m.attributeName !== 'class') return;
-      var overlay = m.target;
-      var panel = overlay.querySelector('.overlay-panel');
-      if (overlay.classList.contains('hidden')) {
-        gsap.killTweensOf(overlay);
-        if (panel) { gsap.killTweensOf(panel); gsap.set(panel, { clearProps:'all' }); }
-        gsap.set(overlay, { clearProps:'all' });
-      } else {
-        gsap.killTweensOf(overlay);
-        if (panel) { gsap.killTweensOf(panel); gsap.set(panel, { clearProps:'all' }); }
-        gsap.fromTo(overlay, { opacity:0 }, { opacity:1, duration:0.22, ease:'power2.out' });
-        if (panel) {
-          gsap.fromTo(panel, { scale:0.92, opacity:0 }, { scale:1, opacity:1, duration:0.3, ease:'power2.out' });
-        }
-      }
-    });
-  });
-  var ov = document.getElementById('overlay');
-  if (ov) _overlayObserver.observe(ov, { attributes:true, attributeFilter:['class'] });
-
-  // ═══════════════════ NARRATIVE ENTRY ANIMATION ═══════════════════
-  var _narrativeObserver = new MutationObserver(function(ms) {
-    ms.forEach(function(m) {
-      m.addedNodes.forEach(function(node) {
-        if (!node.nodeType || node.nodeType !== 1) return;
-        if (node.classList.contains('narrative-entry')) {
-          gsap.fromTo(node, { opacity:0, y:14 }, { opacity:1, y:0, duration:0.35, ease:'power2.out' });
-        }
-        if (node.classList && node.classList.contains('world-thinking')) {
-          gsap.fromTo(node, { opacity:0 }, { opacity:1, duration:0.25 });
-        }
-        if (node.classList && node.classList.contains('narrative-error')) {
-          gsap.fromTo(node, { opacity:0, x:-16 }, { opacity:1, x:0, duration:0.3, ease:'power2.out' });
-        }
-        if (node.classList && node.classList.contains('scene-title')) {
-          gsap.fromTo(node, { opacity:0 }, { opacity:1, duration:0.6, ease:'power2.out' });
-        }
-      });
-    });
-  });
-  var na = document.getElementById('narrative-area');
-  if (na) _narrativeObserver.observe(na, { childList:true });
-
-  // ═══════════════════ TOAST ANIMATION ═══════════════════
-  window.toast = function(msg, type) {
-    var el = document.getElementById('toast');
-    if (!el) return;
-    clearTimeout(el._timeout);
-    gsap.killTweensOf(el);
-    el.textContent = msg;
-    el.className = type === 'error' ? 'error show' : 'show';
-    gsap.fromTo(el, { y:-16, opacity:0 }, { y:0, opacity:1, duration:0.3, ease:'back.out(1.4)' });
-    el._timeout = setTimeout(function() {
-      gsap.to(el, { y:-12, opacity:0, duration:0.22, ease:'power2.in',
-        onComplete: function() { el.className = ''; gsap.set(el, { clearProps:'all' }); }
-      });
-    }, 2500);
-  };
-
-  // ═══════════════════ NARRATIVE SMOOTH SCROLL ═══════════════════
+  // ═══════════════════ NARRATIVE SCROLL (STUB) ═══════════════════
   window.gsapScrollToBottom = function() {
     var area = document.getElementById('narrative-area');
     if (!area) return;
-    gsap.to(area, { scrollTop:area.scrollHeight - area.clientHeight, duration:0.4, ease:'power2.out', overwrite:'auto' });
+    area.scrollTop = area.scrollHeight;
   };
 
-  console.log('GSAP 动效模块已就绪');
+  console.log('GSAP 动效模块已就绪（调试模式 - 零动画）');
 })();
