@@ -1,45 +1,79 @@
 // 动效.js — GSAP 动画模块
-// 调试模式：零动画 stub，验证基础功能
 (function() {
   'use strict';
 
-  if (typeof gsap === 'undefined') {
-    console.warn('GSAP 未加载，动效模块跳过');
-    return;
-  }
+  if (typeof gsap === 'undefined') return;
 
-  // 不加 gsap-ready 类，保留 CSS transition 正常工作
-  // 这样当 gsapScreenIn/Out 函数存在时，showScreen 走 GSAP 路径
-  // 但我们提供的 stub 只做 DOM 操作，不动 opacity
+  // ═══════════════════ 禁用冲突的 CSS transition ═══════════════════
+  (function() {
+    var s = document.createElement('style');
+    s.textContent = '.gsap-ready .screen,.gsap-ready #toast,.gsap-ready .overlay,.gsap-ready .overlay-panel,.gsap-ready .achievement-popup,.gsap-ready .freq-card,.gsap-ready .genre-card,.gsap-ready .cc-option,.gsap-ready .gender-option{transition:none!important}';
+    document.head.appendChild(s);
+    document.body.classList.add('gsap-ready');
+  })();
 
-  // ═══════════════════ SCREEN TRANSITION (STUB) ═══════════════════
+  // ═══════════════════ SCREEN TRANSITION ═══════════════════
   window.gsapScreenOut = function(oldName, cb) {
     var el = document.getElementById(oldName + '-screen');
     if (!el) { if (cb) cb(); return; }
-    el.classList.remove('active');
-    el.classList.add('hidden');
-    if (cb) cb();
+    gsap.killTweensOf(el);
+    gsap.to(el, {
+      opacity: 0, duration: 0.25, ease: 'power2.in',
+      onComplete: function() {
+        el.classList.remove('active');
+        el.classList.add('hidden');
+        gsap.set(el, { clearProps: 'all' });
+        if (cb) cb();
+      }
+    });
   };
 
   window.gsapScreenIn = function(name, cb) {
     var el = document.getElementById(name + '-screen');
     if (!el) { if (cb) cb(); return; }
+    gsap.killTweensOf(el);
+    gsap.set(el, { clearProps: 'all' });
     el.classList.remove('hidden');
-    // 不加 active 类 — 让 CSS transition 自然触发 opacity 过渡
-    // 但 showScreen 原本就会加 active，这里我们依赖 showScreen 的 else 分支逻辑
-    // 实际上 showScreen 调用 gsapScreenIn 时就不会再走 else 分支
-    // 所以需要在这里手动加 active
+    // 确保浏览器在添加 active 前完成布局
     void el.offsetWidth;
     el.classList.add('active');
-    if (cb) cb();
+    gsap.fromTo(el,
+      { opacity: 0 },
+      { opacity: 1, duration: 0.35, ease: 'power2.out',
+        onComplete: function() { if (cb) cb(); }
+      }
+    );
   };
 
-  // ═══════════════════ NARRATIVE SCROLL (STUB) ═══════════════════
+  // ═══════════════════ TOAST ═══════════════════
+  (function() {
+    var _orig = window.toast;
+    window.toast = function(msg, type) {
+      var el = document.getElementById('toast');
+      if (!el) { if (_orig) _orig(msg, type); return; }
+      clearTimeout(el._timeout);
+      gsap.killTweensOf(el);
+      el.textContent = msg;
+      el.className = type === 'error' ? 'error show' : 'show';
+      gsap.fromTo(el, { y: -16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.3, ease: 'back.out(1.4)' });
+      el._timeout = setTimeout(function() {
+        gsap.to(el, { y: -12, opacity: 0, duration: 0.22, ease: 'power2.in',
+          onComplete: function() { el.className = ''; gsap.set(el, { clearProps: 'all' }); }
+        });
+      }, 2500);
+    };
+  })();
+
+  // ═══════════════════ SMOOTH SCROLL ═══════════════════
   window.gsapScrollToBottom = function() {
     var area = document.getElementById('narrative-area');
     if (!area) return;
-    area.scrollTop = area.scrollHeight;
+    gsap.killTweensOf(area, 'scrollTop');
+    gsap.to(area, {
+      scrollTop: area.scrollHeight - area.clientHeight,
+      duration: 0.35, ease: 'power2.out'
+    });
   };
 
-  console.log('GSAP 动效模块已就绪（调试模式 - 零动画）');
+  console.log('GSAP v1 — 屏幕切换 + Toast + 滚动');
 })();
