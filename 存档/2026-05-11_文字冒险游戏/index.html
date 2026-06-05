@@ -202,20 +202,10 @@
 <div id="game-screen" class="screen hidden">
   <div id="stats-bar">
     <div id="stats-items"></div>
+    <button class="font-ctrl" onclick="changeFontSize(-1)" title="缩小字号">A-</button>
+    <button class="font-ctrl" onclick="changeFontSize(1)" title="放大字号">A+</button>
     <div id="location-tag"></div>
     <div id="destiny-tag" style="display:none;cursor:default;font-size:13px;color:var(--accent-bright);padding:2px 6px" title=""></div>
-    <div class="stats-actions">
-      <button onclick="changeFontSize(-1)" title="缩小字号">A-</button>
-      <button onclick="changeFontSize(0)" title="默认字号">Aa</button>
-      <button onclick="changeFontSize(1)" title="放大字号">A+</button>
-      <button onclick="showAnnals()" title="年表">📜 <span class="btn-label">年表</span></button>
-      <button onclick="showInventory()" title="物品">📦 <span class="btn-label">物品</span></button>
-      <button onclick="showRelationships()" title="羁绊">💞 <span class="btn-label">羁绊</span></button>
-      <button onclick="saveGame()" title="保存">💾 <span class="btn-label">保存</span></button>
-      <button onclick="exportStory()" title="导出故事">📄 <span class="btn-label">导出</span></button>
-      <button onclick="showScreen('title')" title="退出">🚪 <span class="btn-label">退出</span></button>
-      <button onclick="showAchievements()" title="成就">🏆 <span class="btn-label">成就</span></button>
-    </div>
   </div>
 
   <div id="narrative-area"></div>
@@ -225,6 +215,16 @@
     <button id="btn-suggest" class="suggestion-ask-btn" onclick="requestSuggestions()">💡 行动建议</button>
     <button id="btn-daredevil" class="suggestion-ask-btn daredevil-btn" onclick="daredevilAction()">💀 作死一下</button>
     <div id="suggestion-buttons"></div>
+  </div>
+
+  <div id="action-bar">
+    <button onclick="showAnnals()">📜<span>年表</span></button>
+    <button onclick="showInventory()">📦<span>物品</span></button>
+    <button onclick="showRelationships()">💞<span>羁绊</span></button>
+    <button onclick="saveGame()">💾<span>保存</span></button>
+    <button onclick="exportStory()">📄<span>导出</span></button>
+    <button onclick="showAchievements()">🏆<span>成就</span></button>
+    <button onclick="showScreen('title')">🚪<span>退出</span></button>
   </div>
 
   <div id="input-area">
