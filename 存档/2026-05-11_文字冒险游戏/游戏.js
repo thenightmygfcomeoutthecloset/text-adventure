@@ -3407,6 +3407,31 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ═══════════════════ FONT SIZE ═══════════════════
+var FONT_SCALES = [0.85, 1, 1.2, 1.45];  // 小 / 默认 / 大 / 超大
+var _fontSizeIdx = 1;  // default
+
+function _loadFontSize() {
+  var saved = localStorage.getItem('text_adventure_font_size');
+  if (saved !== null) {
+    var idx = parseInt(saved, 10);
+    if (idx >= 0 && idx < FONT_SCALES.length) _fontSizeIdx = idx;
+  }
+  _applyFontSize();
+}
+
+function changeFontSize(delta) {
+  _fontSizeIdx = Math.max(0, Math.min(FONT_SCALES.length - 1, _fontSizeIdx + delta));
+  _applyFontSize();
+  localStorage.setItem('text_adventure_font_size', _fontSizeIdx);
+  var labels = ['小', '默认', '大', '超大'];
+  toast('字号：' + labels[_fontSizeIdx]);
+}
+
+function _applyFontSize() {
+  document.documentElement.style.setProperty('--font-scale', FONT_SCALES[_fontSizeIdx]);
+}
+
 function toast(msg, type) {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -3417,6 +3442,9 @@ function toast(msg, type) {
 
 // ═══════════════════ EVENT HANDLERS ═══════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  // Restore font size preference
+  _loadFontSize();
+
   // Genre card clicks, world settings
 
   // Genre card clicks

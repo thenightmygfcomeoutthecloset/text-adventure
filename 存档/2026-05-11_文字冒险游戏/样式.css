@@ -32,6 +32,7 @@
   --radius: 8px;
   --radius-sm: 5px;
   --radius-pill: 20px;
+  --font-scale: 1;
   --font-narrative: 'Noto Serif SC', 'Source Han Serif SC', 'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
   --font-ui: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Helvetica Neue', sans-serif;
   --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
@@ -885,7 +886,7 @@ body::before {
 .dice-roll.roll-neutral { color: var(--text); }
 
 .narrative-entry .world-response {
-  font-size: 16px;
+  font-size: calc(16px * var(--font-scale));
   line-height: 1.85;
   color: var(--text);
   text-align: justify;
@@ -1362,7 +1363,7 @@ body::before {
   #stats-bar { gap: 12px; padding: 8px 14px; font-size: 11px; }
   #narrative-area { padding: 22px 16px 10px; }
   .narrative-entry { margin-bottom: 24px; }
-  .narrative-entry .world-response { font-size: 15px; line-height: 1.75; }
+  .narrative-entry .world-response { font-size: calc(15px * var(--font-scale)); line-height: 1.75; }
   #input-area { padding: 12px 14px 16px; gap: 10px; }
   #command-input { font-size: 14px; padding: 8px 14px; }
   #btn-send { padding: 8px 16px; font-size: 12px; }
@@ -1382,7 +1383,7 @@ body::before {
   .stats-actions button { padding: 4px 8px; font-size: 14px; }
   .stats-actions .btn-label { display: none; }
   #narrative-area { padding: 16px 10px 8px; }
-  .narrative-entry .world-response { font-size: 14px; line-height: 1.7; }
+  .narrative-entry .world-response { font-size: calc(14px * var(--font-scale)); line-height: 1.7; }
   .narrative-entry .player-action { font-size: 11px; margin-bottom: 10px; }
   #input-area { padding: 10px 10px 14px; gap: 8px; }
   #input-prompt { font-size: 14px; }
