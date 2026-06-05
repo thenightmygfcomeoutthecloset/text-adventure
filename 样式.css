@@ -781,12 +781,21 @@ body::before {
   z-index: 2;
   flex-shrink: 0;
   overflow-x: auto;
+  overflow-y: hidden;
   min-height: 44px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
+  max-height: 80px;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              padding 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.25s ease,
+              border-width 0.3s;
+  will-change: max-height;
 }
 #stats-bar.stats-hidden {
-  transform: translateY(-100%);
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  border-bottom-width: 0;
 }
 
 .stat-item {
@@ -1382,6 +1391,7 @@ body::before {
   .stat-sep { margin: 0 1px; }
   .stats-actions button { padding: 4px 8px; font-size: 14px; }
   .stats-actions .btn-label { display: none; }
+  .stats-actions button[title*=\"字号\"] { display: none; }
   #narrative-area { padding: 16px 10px 8px; }
   .narrative-entry .world-response { font-size: calc(14px * var(--font-scale)); line-height: 1.7; }
   .narrative-entry .player-action { font-size: 11px; margin-bottom: 10px; }
