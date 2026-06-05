@@ -3,6 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- ═══════════════════ SECURITY HEADERS ═══════════════════ -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  connect-src 'self' https://api.deepseek.com https://cydvlahdycqttljesokw.supabase.co;
+  font-src 'self' https://fonts.gstatic.com data:;
+  img-src 'self' data:;
+  form-action 'none';
+  frame-ancestors 'none';
+  base-uri 'self';
+">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+
 <title>异界卷 · 文字冒险</title>
 <link rel="stylesheet" href="样式.css">
 </head>

@@ -140,6 +140,14 @@
 var API_URL = 'https://cydvlahdycqttljesokw.supabase.co';
 var SERVICE_KEY = '';  // 运行时从输入框获取，不硬编码在文件中
 var unlocked = false;
+var _adminFailCount = 0;
+var _adminLockUntil = 0;
+
+function _adminLockSec() {
+  if (_adminFailCount >= 5) return 300;  // 5 minutes
+  if (_adminFailCount >= 3) return 30;   // 30 seconds
+  return 0;
+}
 
 function apiHeaders() {
   return {
@@ -159,14 +167,21 @@ function toast(msg) {
 function unlock() {
   var sk = document.getElementById('service-key').value.trim();
   var errEl = document.getElementById('lock-error');
+  var btn = document.querySelector('.lock-box button');
 
   if (!sk) {
     errEl.textContent = '请输入 service_role key';
     return;
   }
 
+  // Rate limiting check
+  if (_adminLockUntil > Date.now()) {
+    var remaining = Math.ceil((_adminLockUntil - Date.now()) / 1000);
+    errEl.textContent = '尝试次数过多，请等待 ' + remaining + ' 秒';
+    return;
+  }
+
   SERVICE_KEY = sk;
-  var btn = document.querySelector('.lock-box button');
   btn.disabled = true; btn.textContent = '验证中...';
   errEl.textContent = '';
 
@@ -174,17 +189,45 @@ function unlock() {
     headers: apiHeaders()
   }).then(function(resp) {
     if (resp.ok) {
+      _adminFailCount = 0;
       unlocked = true;
       document.getElementById('lock-screen').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
       loadData();
     } else {
-      errEl.textContent = 'Service role key 无效或无权访问 game_saves 表 (HTTP ' + resp.status + ')';
+      _adminFailCount++;
+      var lockSec = _adminLockSec();
+      if (lockSec > 0) {
+        _adminLockUntil = Date.now() + lockSec * 1000;
+        errEl.textContent = 'Service role key 无效 (HTTP ' + resp.status + ')。已锁定 ' + lockSec + ' 秒。连续失败 ' + _adminFailCount + ' 次。';
+        // Start countdown on button
+        var tick = function() {
+          var rem = Math.ceil((_adminLockUntil - Date.now()) / 1000);
+          if (rem <= 0) {
+            btn.disabled = false;
+            btn.textContent = '进 入 后 台';
+            return;
+          }
+          btn.textContent = '请等待 ' + rem + ' 秒';
+          btn.disabled = true;
+          setTimeout(tick, 1000);
+        };
+        tick();
+      } else {
+        errEl.textContent = 'Service role key 无效 (HTTP ' + resp.status + ')。失败 ' + _adminFailCount + ' 次。';
+        btn.disabled = false;
+        btn.textContent = '进 入 后 台';
+      }
     }
   }).catch(function(e) {
-    errEl.textContent = '连接失败: ' + (e.message || '网络错误');
-  }).finally(function() {
-    btn.disabled = false; btn.textContent = '进 入 后 台';
+    _adminFailCount++;
+    var lockSec = _adminLockSec();
+    if (lockSec > 0) {
+      _adminLockUntil = Date.now() + lockSec * 1000;
+    }
+    errEl.textContent = '连接失败: ' + (e.message || '网络错误') + (lockSec > 0 ? '。已锁定 ' + lockSec + ' 秒。' : '');
+    btn.disabled = false;
+    btn.textContent = '进 入 后 台';
   });
 }
 
