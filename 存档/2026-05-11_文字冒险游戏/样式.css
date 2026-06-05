@@ -33,9 +33,9 @@
   --radius-sm: 5px;
   --radius-pill: 20px;
   --font-scale: 1;
-  --font-narrative: 'Noto Serif SC', 'Source Han Serif SC', 'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
-  --font-ui: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Helvetica Neue', sans-serif;
-  --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+  --font-narrative: 'Noto Serif SC', 'Source Han Serif SC', 'STSong', 'SimSun', 'Charter', 'Georgia', serif;
+  --font-ui: 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Inter', 'SF Pro Display', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   --transition-fast: 0.18s ease;
   --transition-normal: 0.3s ease;
   --shadow-card: 0 2px 12px rgba(0,0,0,0.3);

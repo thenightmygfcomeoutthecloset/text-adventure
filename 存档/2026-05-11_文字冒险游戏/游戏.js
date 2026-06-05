@@ -2076,15 +2076,12 @@ async function sendCommand() {
   // Dice roll for risky actions
   let rollResult = null;
   let aiCommand = command;
-  // Apply prompt injection guard to user input
-  aiCommand = guardPromptInjection(aiCommand);
   if (isRiskyAction(command)) {
     const actionType = classifyActionType(command);
     rollResult = rollCheck(actionType);
     const sign = rollResult.modifier >= 0 ? '+' : '';
     const rollText = `🎲 命运判定：${rollResult.d20} / 20${rollResult.modifier !== 0 ? ` (${sign}${rollResult.modifier})` : ''}，${DICE_TIER_NAMES[rollResult.tier]}`;
     appendRollResult(rollText, rollResult.tier).classList.add('api-pending');
-    aiCommand = `【🎲 命运判定：d20=${rollResult.d20}，修正${sign}${rollResult.modifier}，结果=${rollResult.total}，判定=${DICE_TIER_NAMES[rollResult.tier]}】`;
     var diceInstruction = '';
     if (rollResult.tier === 'critFail') {
       diceInstruction = '【🎲 大失败 (1/20)】这次行动必须以灾难性方式失败——不只是失败，而是产生严重的连锁后果：受伤、暴露、失去重要物品、触怒关键NPC、或引发不可逆的剧情转折。不可轻描淡写，不可用"险些"缓和。后果必须真实落地。';
@@ -2103,6 +2100,8 @@ async function sendCommand() {
   } else {
     state._recentReckless = 0;
   }
+  // Apply prompt injection guard after dice instruction is built
+  aiCommand = guardPromptInjection(aiCommand);
 
   // Show player action in narrative
   appendPlayerAction(command).classList.add('api-pending');
