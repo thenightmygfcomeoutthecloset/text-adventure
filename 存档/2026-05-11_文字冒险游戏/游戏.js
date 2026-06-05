@@ -1089,11 +1089,45 @@ function showScreen(name) {
       };
       window.visualViewport.addEventListener('resize', _visualViewportHandler);
     }
-  } else if (oldScreen === 'game' && _visualViewportHandler) {
-    window.visualViewport.removeEventListener('resize', _visualViewportHandler);
-    _visualViewportHandler = null;
-    var dock = document.getElementById('input-dock');
-    if (dock) dock.style.transform = '';
+    // Scroll-aware stats bar: hide when reading, show when scrolling up
+    var narrativeArea = document.getElementById('narrative-area');
+    var statsBar = document.getElementById('stats-bar');
+    var _lastScrollY = 0;
+    var _scrollTicking = false;
+    _statsBarScrollHandler = function() {
+      if (!_scrollTicking) {
+        requestAnimationFrame(function() {
+          var scrollY = narrativeArea.scrollTop;
+          var maxScroll = narrativeArea.scrollHeight - narrativeArea.clientHeight;
+          // Always show stats bar at the very bottom (latest content)
+          if (maxScroll - scrollY < 40) {
+            statsBar.classList.remove('stats-hidden');
+          } else if (scrollY > _lastScrollY && scrollY > 40) {
+            statsBar.classList.add('stats-hidden');
+          } else if (scrollY < _lastScrollY - 6 || scrollY < 10) {
+            statsBar.classList.remove('stats-hidden');
+          }
+          _lastScrollY = scrollY;
+          _scrollTicking = false;
+        });
+        _scrollTicking = true;
+      }
+    };
+    narrativeArea.addEventListener('scroll', _statsBarScrollHandler, { passive: true });
+  } else if (oldScreen === 'game') {
+    if (_visualViewportHandler) {
+      window.visualViewport.removeEventListener('resize', _visualViewportHandler);
+      _visualViewportHandler = null;
+      var dock = document.getElementById('input-dock');
+      if (dock) dock.style.transform = '';
+    }
+    if (_statsBarScrollHandler) {
+      var oldNarrative = document.getElementById('narrative-area');
+      if (oldNarrative) oldNarrative.removeEventListener('scroll', _statsBarScrollHandler);
+      _statsBarScrollHandler = null;
+    }
+    var oldStatsBar = document.getElementById('stats-bar');
+    if (oldStatsBar) oldStatsBar.classList.remove('stats-hidden');
   }
 
   if (name === 'title') {
@@ -1840,6 +1874,7 @@ ${worldState}
 let _activeAbortController = null;
 let _lastFailedCommand = '';
 let _visualViewportHandler = null;
+let _statsBarScrollHandler = null;
 
 function abortPendingRequest() {
   if (_activeAbortController) {
