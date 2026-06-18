@@ -1117,12 +1117,20 @@ function selectFrequency(freq) {
     const randomBtn = document.querySelector('#world-screen .btn-random-all');
     const worldLabel = document.getElementById('world-freq-label');
     const isMale = freq === 'male';
-    if (gridMale) gridMale.style.display = isMale ? 'grid' : 'none';
-    if (gridFemale) gridFemale.style.display = isMale ? 'none' : 'grid';
+    if (gridMale) {
+      gridMale.classList.remove('initially-hidden');
+      gridMale.style.display = isMale ? 'grid' : 'none';
+    }
+    if (gridFemale) {
+      gridFemale.classList.remove('initially-hidden');
+      gridFemale.style.display = isMale ? 'none' : 'grid';
+    }
     if (tabCommon) tabCommon.style.display = 'none';
     if (randomBtn) randomBtn.style.display = '';
     if (worldLabel) worldLabel.textContent = isMale ? '男频世界' : '女频世界';
   };
+  // Fallback in case transitionend fails
+  setTimeout(applyFreqGrids, 350);
   worldScreen.addEventListener('transitionend', applyFreqGrids, { once: true });
 }
 
