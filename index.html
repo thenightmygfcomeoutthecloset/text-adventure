@@ -9,7 +9,7 @@
 <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 
 <title>异界卷 · 文字冒险</title>
-<link rel="stylesheet" href="样式.css?v=0.7.3">
+<link rel="stylesheet" href="样式.css?v=0.7.4">
 </head>
 <body>
 
@@ -18,7 +18,7 @@
   <div class="title-main">
     <h1>异 界 卷</h1>
     <p class="subtitle">自 由 文 字 冒 险</p>
-    <p class="version-tag">v0.7.3「冒险折叠」</p>
+    <p class="version-tag">v0.7.4「布局微调」</p>
   </div>
   <div class="title-actions">
     <div class="settings-section" style="margin-bottom:16px">
@@ -202,6 +202,8 @@
 <div id="game-screen" class="screen hidden">
   <div id="stats-bar">
     <div id="stats-items"></div>
+    <div id="location-tag"></div>
+    <div id="destiny-tag" style="display:none;cursor:default;font-size:13px;color:var(--accent-bright);padding:2px 6px" title=""></div>
     <div class="top-dropdown" id="adventure-dropdown">
       <button class="dropdown-toggle" onclick="toggleTopDropdown(event)"><span>冒险</span><span class="triangle">▼</span></button>
       <div class="dropdown-menu hidden" id="top-dropdown-menu">
@@ -210,8 +212,6 @@
         <button onclick="showRelationships(); toggleTopDropdown(event)">💞 角色羁绊</button>
       </div>
     </div>
-    <div id="location-tag"></div>
-    <div id="destiny-tag" style="display:none;cursor:default;font-size:13px;color:var(--accent-bright);padding:2px 6px" title=""></div>
     <button class="font-ctrl" onclick="changeFontSize(-1)" title="缩小字号">A-</button>
     <button class="font-ctrl" onclick="changeFontSize(1)" title="放大字号">A+</button>
     <button class="menu-btn" onclick="toggleMenuDrawer()" title="系统菜单">☰</button>
@@ -259,7 +259,7 @@
 <div id="toast"></div>
 
 <div id="achievement-popup" class="achievement-popup hidden"></div>
-<script src="数据.js?v=0.7.3"></script>
-<script src="游戏.js?v=0.7.3"></script>
+<script src="数据.js?v=0.7.4"></script>
+<script src="游戏.js?v=0.7.4"></script>
 </body>
 </html>
