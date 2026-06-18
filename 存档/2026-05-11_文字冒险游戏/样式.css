@@ -301,17 +301,18 @@ body::before {
 .login-modal-panel {
   position: relative;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: 12px;
   padding: 32px 28px 24px;
   width: 90%;
-  max-width: 340px;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   animation: modalIn 0.25s ease;
   z-index: 1;
+  box-shadow: var(--shadow-elevated);
 }
 .login-modal-close {
   position: absolute;
@@ -1574,14 +1575,18 @@ body::before {
   #input-dock { padding-bottom: max(0px, env(safe-area-inset-bottom, 0px)); }
 
   /* ── Overlay — full screen on mobile ── */
-  .overlay-panel {
-    padding: 20px 14px; width: 100%; max-width: 100%;
+  .overlay-panel, .login-modal-panel {
+    padding: 24px 16px; width: 100%; max-width: 100%;
+    height: 100vh; height: 100dvh;
     max-height: 100vh; max-height: 100dvh;
     border-radius: 0;
     border: none;
     border-top: 1px solid var(--border-light);
+    margin: 0;
+    display: flex;
+    flex-direction: column;
   }
-  .overlay { align-items: flex-end; }
+  .overlay, .login-modal { align-items: flex-end; }
   .overlay-panel h3 { font-size: 16px; letter-spacing: 4px; margin-bottom: 18px; }
   .overlay-close { margin-top: 16px; padding: 10px 36px; min-height: 44px; }
 
