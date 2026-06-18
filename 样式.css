@@ -45,6 +45,9 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   overflow: hidden;
+  overflow-x: hidden;
+  width: 100vw;
+  max-width: 100vw;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -1678,6 +1681,10 @@ body::before {
   .font-ctrl { padding: 2px 4px; font-size: 9px; }
   #location-tag { font-size: 10px; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #destiny-tag { font-size: 11px !important; }
+  
+  @media (max-width: 380px) {
+    .font-ctrl { display: none; }
+  }
 
   /* ── Narrative Area ── */
   #narrative-area { padding: 14px 10px 8px; }
