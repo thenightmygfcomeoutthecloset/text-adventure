@@ -242,6 +242,8 @@
     <div id="suggestion-bar">
       <button id="btn-suggest" class="suggestion-ask-btn" onclick="requestSuggestions()" aria-label="请求行动建议">💡</button>
       <button id="btn-daredevil" class="suggestion-ask-btn daredevil-btn" onclick="daredevilAction()" aria-label="作死行动">💀</button>
+      <button id="btn-undo" class="suggestion-ask-btn action-history-btn" onclick="undoLast()" aria-label="回退一步" style="display:none">↩️</button>
+      <button id="btn-regenerate" class="suggestion-ask-btn action-history-btn" onclick="regenerateLast()" aria-label="重新生成" style="display:none">🔄</button>
       <div id="suggestion-buttons"></div>
     </div>
     <div id="input-area">
