@@ -70,8 +70,8 @@
     </div>
 
     <button onclick="goToFreqScreen()">开 启 新 篇</button>
-    <button class="ghost initially-hidden" id="btn-continue" onclick="continueGame()">继续未完成的冒险</button>
-    <button class="ghost initially-hidden" id="btn-load-slot" onclick="showSaveManager()">读取存档</button>
+    <button class="ghost" id="btn-continue" onclick="continueGame()" style="display: none;">继续未完成的冒险</button>
+    <button class="ghost" id="btn-load-slot" onclick="showSaveManager()" style="display: none;">读取存档</button>
   </div>
 </section>
 
@@ -111,7 +111,7 @@
 
     <div class="settings-section">
       <h3 id="world-freq-label">选择一个世界</h3>
-      <div class="genre-grid initially-hidden" id="grid-male">
+      <div class="genre-grid" id="grid-male" style="display: none;">
         <button class="genre-card" data-genre="奇幻仙侠"><div class="icon">🏔️</div><div class="name">奇幻仙侠</div><div class="desc">灵气·功法·宗门·飞升</div></button>
         <button class="genre-card" data-genre="传统玄幻"><div class="icon">🔥</div><div class="name">传统玄幻</div><div class="desc">斗气·血脉·逆袭·诸天</div></button>
         <button class="genre-card" data-genre="武侠江湖"><div class="icon">🏮</div><div class="name">武侠江湖</div><div class="desc">武功·门派·江湖·恩怨</div></button>
@@ -128,7 +128,7 @@
         <button class="genre-card" data-genre="重生崛起"><div class="icon">🔄</div><div class="name">重生崛起</div><div class="desc">重生·先知·布局·巅峰</div></button>
         <button class="genre-card" data-genre="悬疑灵异"><div class="icon">👻</div><div class="name">悬疑灵异</div><div class="desc">诡异·民俗·禁忌·收容</div></button>
       </div>
-      <div class="genre-grid initially-hidden" id="grid-female">
+      <div class="genre-grid" id="grid-female" style="display: none;">
         <button class="genre-card" data-genre="宫斗宅斗"><div class="icon">👑</div><div class="name">宫斗宅斗</div><div class="desc">后宫·内院·心计·上位</div></button>
         <button class="genre-card" data-genre="霸总"><div class="icon">💼</div><div class="name">霸总</div><div class="desc">总裁·契约·虐恋·深情</div></button>
         <button class="genre-card" data-genre="重生复仇"><div class="icon">💔</div><div class="name">重生复仇</div><div class="desc">重生·复仇·逆袭·虐渣</div></button>
