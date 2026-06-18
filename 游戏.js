@@ -871,6 +871,7 @@ let state = {
   stats: { ...DEFAULT_STATS },
   inventory: [],
   location: '',
+  locationHistory: [],
   worldMemory: '',
   relationships: [],    // { name, title, relation, notes }
   fullHistory: [],      // { role:'player'|'world', content } for display
@@ -913,6 +914,7 @@ function serializeState() {
     stats: state.stats,
     inventory: state.inventory,
     location: state.location,
+    locationHistory: state.locationHistory,
     worldMemory: state.worldMemory,
     relationships: state.relationships,
     fullHistory: state.fullHistory.slice(-100),
@@ -946,6 +948,7 @@ function deserializeState(save) {
   state.stats = save.stats || { ...DEFAULT_STATS };
   state.inventory = save.inventory || [];
   state.location = save.location || '';
+  state.locationHistory = save.locationHistory || (state.location ? [state.location] : []);
   state.worldMemory = save.worldMemory || '';
   state.relationships = (save.relationships || []).map(r => ({
     name: r.name,
@@ -2347,6 +2350,7 @@ function restartGame() {
   state.inventory = [];
   state.characterSheet = { gender: '', attributes: {} };
   state.location = '';
+  state.locationHistory = [];
   state.worldMemory = '';
   state.relationships = [];
   state.fullHistory = [];
@@ -2626,7 +2630,11 @@ function _trackAchievementFlags(response) {
 
 function updateGameStateFromResponse(response) {
   const loc = extractLocation(response);
-  if (loc) state.location = loc;
+  if (loc) {
+    state.location = loc;
+    if (!state.locationHistory) state.locationHistory = [];
+    if (!state.locationHistory.includes(loc)) state.locationHistory.push(loc);
+  }
   _extractItemsFromResponse(response);
   _extractStatChanges(response);
   const relPattern = /\[关系更新[：:]\s*(.+?)\s*[—–-]\s*(.+?)(?:\s*\|\s*(.+?))?(?:\s*\|\s*(.+?))?\]/g;
@@ -3023,7 +3031,48 @@ function showInventory() {
   } else {
     html += '<ul class="item-list">';
     state.inventory.forEach(item => {
-      html += `<li>${escapeHtml(item)}</li>`;
+      html += `<li style="display:flex; justify-content:space-between; align-items:center;">
+        <span>${escapeHtml(item)}</span>
+        <button class="ghost" style="padding:4px 8px; font-size:11px;" onclick="useItem('${escapeHtml(item.replace(/'/g, "\\'"))}')">使用</button>
+      </li>`;
+    });
+    html += '</ul>';
+  }
+  html += '<button class="overlay-close" onclick="closeOverlay()">关 闭</button>';
+
+  content.innerHTML = html;
+  overlay.classList.remove('hidden');
+}
+
+function useItem(item) {
+  closeOverlay();
+  const input = document.getElementById('command-input');
+  if (input) {
+    input.value = `[使用物品：${item}] `;
+    input.focus();
+  }
+}
+
+// ═══════════════════ MAP / FOOTPRINTS ═══════════════════
+function showMap() {
+  const overlay = document.getElementById('overlay');
+  const content = document.getElementById('overlay-content');
+
+  let html = '<h3>🗺️ 足迹地图</h3>';
+  const history = state.locationHistory || [];
+  if (history.length === 0) {
+    html += '<p class="empty">你还未踏足任何有名字的地方</p>';
+  } else {
+    html += '<ul class="item-list" style="list-style: none; padding-left: 0;">';
+    history.forEach((loc, index) => {
+      const isCurrent = (loc === state.location);
+      const icon = isCurrent ? '📍' : '👣';
+      const color = isCurrent ? 'var(--accent-bright)' : 'var(--text-dim)';
+      html += `<li style="padding: 12px 14px; margin-bottom: 8px; background: var(--bg-input); border-radius: 8px; color: ${color}; border: 1px solid ${isCurrent ? 'var(--accent)' : 'transparent'};">
+        <span style="margin-right: 10px;">${icon}</span>
+        <span>${escapeHtml(loc)}</span>
+        ${isCurrent ? '<span style="float: right; font-size: 10px; background: var(--accent); padding: 2px 6px; border-radius: 4px; color: #121118;">当前位置</span>' : ''}
+      </li>`;
     });
     html += '</ul>';
   }
