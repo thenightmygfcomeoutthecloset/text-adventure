@@ -2862,6 +2862,32 @@ function updateStatsBar() {
   }
 }
 
+// ═══════════════════ TOP DROPDOWN ═══════════════════
+function toggleTopDropdown(e) {
+  if (e) e.stopPropagation();
+  const dropdown = document.getElementById('adventure-dropdown');
+  const menu = document.getElementById('top-dropdown-menu');
+  if (menu.classList.contains('hidden')) {
+    menu.classList.remove('hidden');
+    dropdown.classList.add('active');
+  } else {
+    menu.classList.add('hidden');
+    dropdown.classList.remove('active');
+  }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  const dropdown = document.getElementById('adventure-dropdown');
+  if (dropdown && !dropdown.contains(e.target)) {
+    const menu = document.getElementById('top-dropdown-menu');
+    if (menu && !menu.classList.contains('hidden')) {
+      menu.classList.add('hidden');
+      dropdown.classList.remove('active');
+    }
+  }
+});
+
 // ═══════════════════ MENU DRAWER ═══════════════════
 function toggleMenuDrawer() {
   const drawer = document.getElementById('menu-drawer');

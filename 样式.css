@@ -836,6 +836,92 @@ body::before {
   flex-shrink: 0;
 }
 
+/* ═══════════════════ TOP DROPDOWN ═══════════════════ */
+.top-dropdown {
+  position: relative;
+  display: inline-block;
+  margin-left: 8px;
+}
+
+.dropdown-toggle {
+  background: rgba(139, 117, 40, 0.1);
+  border: 1px solid var(--border);
+  color: var(--accent-bright);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all var(--transition-fast);
+}
+
+.dropdown-toggle:hover {
+  background: rgba(139, 117, 40, 0.2);
+  border-color: var(--accent);
+}
+
+.dropdown-toggle .triangle {
+  font-size: 8px;
+  transition: transform 0.2s;
+}
+
+.top-dropdown.active .triangle {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: rgba(18, 17, 24, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  z-index: 40;
+  transform-origin: top left;
+  animation: dropdownFadeIn 0.2s ease-out forwards;
+}
+
+.dropdown-menu.hidden {
+  display: none;
+}
+
+@keyframes dropdownFadeIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.dropdown-menu button {
+  background: transparent;
+  border: none;
+  color: var(--text-bright);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  text-align: left;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dropdown-menu button:hover {
+  background: rgba(139, 117, 40, 0.15);
+  color: var(--accent-bright);
+}
+
 #location-tag {
   margin-left: auto;
   color: var(--text-dim);
