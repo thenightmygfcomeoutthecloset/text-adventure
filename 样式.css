@@ -779,8 +779,6 @@ body::before {
   font-size: 12px;
   z-index: 2;
   flex-shrink: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
   min-height: 44px;
   max-height: 80px;
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
