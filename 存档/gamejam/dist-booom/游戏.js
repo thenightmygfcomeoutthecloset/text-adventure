@@ -1,3 +1,5 @@
+// ═══════════════════ GAMEJAM CONFIG ═══════════════════
+var GAME_CONFIG = window.GAME_CONFIG || {};
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
 // currentUser.type: 'guest' | 'cloud'
 let currentUser = null; // { id, email, displayName, type }
@@ -748,23 +750,6 @@ let state = {
 
 // ═══════════════════ PERSISTENCE ═══════════════════
 function serializeState() {
-  // Extract narrative preview from the last AI response in the DOM
-  var preview = '';
-  var narrativeArea = document.getElementById('narrative-area');
-  if (narrativeArea) {
-    var worldResponses = narrativeArea.querySelectorAll('.world-response');
-    if (worldResponses.length > 0) {
-      var lastResp = worldResponses[worldResponses.length - 1];
-      var text = lastResp.textContent || lastResp.innerText || '';
-      preview = text.replace(/\s+/g, ' ').trim().slice(0, 60);
-    }
-  }
-  // Count user turns
-  var turnCount = 0;
-  if (state.apiHistory) {
-    turnCount = state.apiHistory.filter(function (m) { return m.role === 'user'; }).length;
-  }
-
   return {
     worldGenre: state.worldGenre,
     customWorldDesc: state.customWorldDesc,
@@ -788,16 +773,15 @@ function serializeState() {
     critSuccessCount: state.critSuccessCount || 0,
     activeFrequency: state.activeFrequency || 'male',
     savedAt: new Date().toISOString(),
-    // Extended save info for rich save cards
-    worldName: state.worldGenre || '',
-    charGender: (state.characterSheet && state.characterSheet.gender) || '',
-    turnCount: turnCount,
-    preview: preview,
   };
 }
 
 function deserializeState(save) {
   state.apiKey = localStorage.getItem('text_adventure_apikey') || '';
+  // GameJam: fallback to built-in key when loading saves
+  if (!state.apiKey && GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY) {
+    state.apiKey = GAME_CONFIG.DEEPSEEK_API_KEY;
+  }
   state.worldGenre = save.worldGenre || '';
   state.customWorldDesc = save.customWorldDesc || '';
   state.playerName = save.playerName || '';
@@ -887,10 +871,17 @@ function selectFrequency(freq) {
 }
 
 function goToFreqScreen() {
-  const key = document.getElementById('api-key-input')?.value.trim();
+  var key = document.getElementById('api-key-input')?.value.trim();
+  // GameJam: use built-in key if no manual input
+  if (!key && GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY) {
+    key = GAME_CONFIG.DEEPSEEK_API_KEY;
+  }
   if (!key) { toast('请先输入 DeepSeek API 密钥', 'error'); return; }
   state.apiKey = key;
-  localStorage.setItem('text_adventure_apikey', key);
+  // Only save to localStorage if user typed it manually
+  if (!GAME_CONFIG.JAM_BUILD || !GAME_CONFIG.DEEPSEEK_API_KEY || document.getElementById('api-key-input')?.value.trim()) {
+    localStorage.setItem('text_adventure_apikey', key);
+  }
   showScreen('freq');
 }
 
@@ -938,21 +929,6 @@ function showScreen(name) {
   if (name === 'game') {
     updateStatsBar();
     document.getElementById('command-input').focus();
-    // Mobile: keyboard-aware input dock
-    if (window.visualViewport) {
-      _visualViewportHandler = function () {
-        var dock = document.getElementById('input-dock');
-        if (!dock) return;
-        var offsetY = window.innerHeight - window.visualViewport.height;
-        dock.style.transform = 'translateY(-' + offsetY + 'px)';
-      };
-      window.visualViewport.addEventListener('resize', _visualViewportHandler);
-    }
-  } else if (oldScreen === 'game' && _visualViewportHandler) {
-    window.visualViewport.removeEventListener('resize', _visualViewportHandler);
-    _visualViewportHandler = null;
-    var dock = document.getElementById('input-dock');
-    if (dock) dock.style.transform = '';
   }
 
   if (name === 'title') {
@@ -1583,6 +1559,18 @@ ${statsDisplay}
 物品：${state.inventory.length > 0 ? state.inventory.join('、') : '无'}
 ${state.relationships.length > 0 ? '人际关系：' + state.relationships.map(r => `${r.name}（${r.title || '未知身份'}）— ${r.relation}${r.notes ? '，' + r.notes : ''}`).join(' | ') : ''}
 ${state.worldMemory ? '重要经历：' + state.worldMemory : ''}
+${(() => {
+  const unlocked = state.unlockedAchievements || [];
+  if (unlocked.length === 0) return '';
+  const names = ACHIEVEMENTS.filter(a => unlocked.includes(a.id)).map(a => a.icon + a.name);
+  return '已获成就：' + names.join(' | ') + '（共' + unlocked.length + '项。在叙事中自然地呼应这些成就——角色因为这些经历而在世界中获得认可、名声或独特待遇）';
+})()}
+${(() => {
+  const annals = state.annals || [];
+  if (annals.length === 0) return '';
+  const recent = annals.slice(-5);
+  return '年表（最近事件）：' + recent.map(a => `第${a.chapter}章「${a.title}」— ${a.event}`).join(' | ') + '（年表记录了角色的重要经历，NPC可能对这些事件有所耳闻或反应）';
+})()}
 ${plotState}`;
 
   return `你不只是这个世界的描述者——你是这个世界的叙事意志。你的每一次回复，既是角色所见所闻的感官现实，更是这个类型故事在按照其内在的叙事法则向前推进。风会吹，光会变，NPC会老，但更重要的是——故事在生长。它有开端、发展、转折、高潮和结局。你不是在等待角色做什么，而是与角色共同编织这段命运。
@@ -1602,6 +1590,13 @@ ${plotState}`;
 - 节奏有变化：战斗和危机时紧凑急促，探索和对话时舒展从容
 - 每次回复通常在150-400字，非常重要的场景可以适当加长至600字
 - 使用流畅的中文，避免翻译腔
+
+【对话行动——关键规则】
+当角色的行动包含向NPC提问、交谈、询问、打听、对话等交流行为时，你的回复必须在一个回合内完成完整的交流闭环。具体规则：
+1. 提问/对话的动作描写必须极度精简——控制在1-2句话以内，不要详细展开角色的坐姿、心理活动、语气铺垫
+2. 角色提问的内容以简短转述的方式带过即可，不需要逐字复述玩家已说的问句
+3. **NPC的回应才是这个行动的核心叙事内容**——把篇幅留给NPC在听到问题后的反应和回答：他们说了什么、以什么态度说的、这番话揭示了什么信息或推进了什么剧情
+4. 如果玩家只是对NPC说一句话（不是提问），NPC同样应当给出回应，而不是让对话停在玩家说完的那一句
 
 【叙事风格强化——剧情风格】
 ${(() => {
@@ -1629,6 +1624,30 @@ ${(() => {
 - 因果关系清晰，不能凭空出现解围之物或机械降神
 - 世界有它独立运转的法则，始终保持一致
 - NPC有自己的动机、性格、记忆，行为符合其设定
+
+【因果铁律——骰子、代价与边界】
+这是整个游戏体验的基石。违反以下任何一条，故事将沦为毫无张力的"许愿模拟器"。
+
+1. 骰子即命运——绝不忤逆判定结果
+   当行动触发🎲命运判定时，判定结果是绝对的。大失败(1/20)就是灾难性的——受伤、关键物品损毁、重要NPC对你失去信任、引发不可逆的剧情转折。不要用"险些""差一点""虽然……但是侥幸"来软化失败的后果。失败就是失败，后果必须真实落地。
+   大成功(20/20)就是超预期的——但也只能在这种判定下才能出现超越常规的成果。普通成功(11-19)有代价或瑕疵，普通失败(2-10)行不通就是行不通。
+
+2. 属性即能力边界——数值不是装饰
+   生命值低意味着角色真的处于危险中——受伤影响行动能力，濒死状态下的角色不可能完成需要体力的壮举。
+   攻击/防御/灵力等战斗属性决定了角色在冲突中的实力上限——属性3的角色不能靠"意志力"打败属性30的对手。
+   金钱/灵石等资源是有限的——花掉了就没了，欠债了就是欠债了。不要凭空给角色送钱。
+
+3. 物品即可能性——没有的东西就不能用
+   背包里的每件物品都是角色拥有的实际资源。角色不能使用背包里没有的物品。不要为了"帮"角色而让他突然想起口袋里有个刚好需要的东西。
+
+4. NPC不是许愿池——他们有自己的意志
+   NPC不会因为"玩家想要什么"就给出什么。他们有各自的性格、立场、秘密和底线。一个冷漠的NPC不会突然掏心掏肺，一个敌对的NPC不会因为几句好话就化敌为友——除非角色的行动和剧情铺垫真正改变了关系。
+   NPC可能拒绝请求、可能说谎、可能隐藏关键信息、可能在关键时刻背叛——这些都是合法且有价值的叙事走向。不是所有NPC都要"配合"角色。
+
+5. 世界不围着你转——代价永远是真实的
+   每一个选择都有连锁反应。冒犯了权势人物会被报复，在危险区域乱闯会触发陷阱，透支力量会遭到反噬。
+   这个世界不是为了让角色"赢"而存在的——它是一个不完美、不公正、有代价的真实世界。你的职责是忠实地呈现这些代价，而不是帮角色回避它们。
+   拒绝把游戏变成"多催几次AI就能心想事成"的许愿模拟器。叙事的张力恰恰来自于——角色不是万能的，世界不会轻易让步。
 
 【感情线——像优秀小说一样自然】
 - 感情的演变是重要但非强制的叙事维度
@@ -1697,29 +1716,12 @@ ${worldState}
 
 // ═══════════════════ API CALL ═══════════════════
 let _activeAbortController = null;
-let _lastFailedCommand = '';
-let _visualViewportHandler = null;
 
 function abortPendingRequest() {
   if (_activeAbortController) {
     _activeAbortController.abort();
     _activeAbortController = null;
   }
-}
-
-async function callWithRetry(fn, maxRetries = 2) {
-  let lastError;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastError = e;
-      if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, attempt === 0 ? 1500 : 3000));
-      }
-    }
-  }
-  throw lastError;
 }
 
 async function callAPI(messages, onStream) {
@@ -1881,7 +1883,7 @@ async function sendCommand() {
     rollResult = rollCheck(actionType);
     const sign = rollResult.modifier >= 0 ? '+' : '';
     const rollText = `🎲 命运判定：${rollResult.d20} / 20${rollResult.modifier !== 0 ? ` (${sign}${rollResult.modifier})` : ''}，${DICE_TIER_NAMES[rollResult.tier]}`;
-    appendRollResult(rollText, rollResult.tier).classList.add('api-pending');
+    appendRollResult(rollText, rollResult.tier);
     aiCommand = `【🎲 命运判定：d20=${rollResult.d20}，修正${sign}${rollResult.modifier}，结果=${rollResult.total}，判定=${DICE_TIER_NAMES[rollResult.tier]}】`;
     var diceInstruction = '';
     if (rollResult.tier === 'critFail') {
@@ -1903,9 +1905,8 @@ async function sendCommand() {
   }
 
   // Show player action in narrative
-  appendPlayerAction(command).classList.add('api-pending');
+  appendPlayerAction(command);
   state.fullHistory.push({ role: 'player', content: command });
-  _lastFailedCommand = command;
 
   // Show thinking indicator
   const narrativeArea = document.getElementById('narrative-area');
@@ -1917,9 +1918,6 @@ async function sendCommand() {
   scrollToBottom();
   resetSuggestions();
 
-  // Compress conversation history before building API messages
-  state.apiHistory = await compressHistory(state.apiHistory);
-
   // Build API messages
   const systemPrompt = buildSystemPrompt();
   const apiMessages = buildApiMessages(systemPrompt, aiCommand);
@@ -1928,11 +1926,11 @@ async function sendCommand() {
     let streamedContent = '';
     const responseEl = createStreamingResponseElement();
 
-    const response = await callWithRetry(() => callAPI(apiMessages, (partial) => {
+    const response = await callAPI(apiMessages, (partial) => {
       streamedContent = partial;
       updateStreamingResponse(responseEl, partial);
       scrollToBottom();
-    }));
+    });
 
     // Finalize — strip relationship annotations from displayed text
     const cleanResponse = stripAnnotations(response);
@@ -1973,22 +1971,13 @@ async function sendCommand() {
     }
   } catch (err) {
     removeThinkingIndicator();
-
     const errEl = document.createElement('div');
-    errEl.className = 'narrative-error';
-
-    let errorText;
-    const errMsg = err.message || '';
-    if (errMsg.includes('账户余额不足') || errMsg.includes('insufficient_balance')) {
-      errorText = 'DeepSeek 余额不足，请充值后继续';
-    } else if (err.name === 'TypeError' || errMsg.includes('超时') || errMsg.includes('网络')) {
-      errorText = '网络连接异常';
-    } else {
-      errorText = '服务暂时不可用';
+    errEl.className = 'narrative-entry';
+    var errMsg = escapeHtml(err.message);
+    if (GAME_CONFIG.JAM_BUILD) {
+      errMsg = '试玩服务暂时不可用，请稍后重试。' + (errMsg ? '（' + errMsg + '）' : '');
     }
-
-    errEl.innerHTML = `<div class="narrative-error-msg">${escapeHtml(errorText)}</div>
-      <button class="narrative-error-retry" onclick="retryLastCommand()">重试</button>`;
+    errEl.innerHTML = `<div class="world-response" style="color:#c47a7a;">世界突然变得模糊起来……${errMsg}</div>`;
     narrativeArea.appendChild(errEl);
     scrollToBottom();
   }
@@ -1998,21 +1987,6 @@ async function sendCommand() {
   document.getElementById('btn-suggest').disabled = false;
   document.getElementById('btn-daredevil').disabled = false;
   input.focus();
-}
-
-function retryLastCommand() {
-  if (!_lastFailedCommand) return;
-
-  // Remove error messages and pending action elements from the failed attempt
-  document.querySelectorAll('.narrative-error, .api-pending').forEach(el => el.remove());
-  // Also roll back fullHistory (last player action was added before the failure)
-  if (state.fullHistory.length > 0 && state.fullHistory[state.fullHistory.length - 1].role === 'player') {
-    state.fullHistory.pop();
-  }
-
-  const input = document.getElementById('command-input');
-  input.value = _lastFailedCommand;
-  sendCommand();
 }
 
 function handlePlayerDeath() {
@@ -2139,12 +2113,8 @@ function buildApiMessages(systemPrompt, currentCommand) {
   const messages = [{ role: 'system', content: systemPrompt }];
 
   // Add recent history from apiHistory (skip old system prompt)
-  const nonSystem = state.apiHistory.filter(m => m.role !== 'system');
-  // Always preserve story summaries so compressed context isn't lost
-  const summaries = nonSystem.filter(m => m.content.startsWith('【故事摘要】'));
-  const regular = nonSystem.filter(m => !m.content.startsWith('【故事摘要】'));
-  messages.push(...summaries);
-  messages.push(...regular.slice(-20));
+  const recentHistory = state.apiHistory.filter(m => m.role !== 'system').slice(-20);
+  messages.push(...recentHistory);
 
   // Add current command
   messages.push({ role: 'user', content: currentCommand });
@@ -2159,7 +2129,6 @@ function appendPlayerAction(command) {
   entry.innerHTML = `<div class="player-action">▸ ${escapeHtml(command)}</div>`;
   document.getElementById('narrative-area').appendChild(entry);
   scrollToBottom();
-  return entry;
 }
 
 function appendRollResult(text, tier) {
@@ -2169,7 +2138,6 @@ function appendRollResult(text, tier) {
   entry.innerHTML = `<div class="dice-roll ${tierClass}">${escapeHtml(text)}</div>`;
   document.getElementById('narrative-area').appendChild(entry);
   scrollToBottom();
-  return entry;
 }
 
 function createStreamingResponseElement() {
@@ -2235,12 +2203,9 @@ function renderFullHistory() {
 }
 
 function scrollToBottom() {
-  requestAnimationFrame(function () {
-    var area = document.getElementById('narrative-area');
-    if (!area) return;
-    area.scrollTop = area.scrollHeight;
-    var lastNode = area.lastElementChild;
-    if (lastNode) lastNode.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  requestAnimationFrame(() => {
+    const area = document.getElementById('narrative-area');
+    if (area) area.scrollTop = area.scrollHeight;
   });
 }
 
@@ -2592,31 +2557,6 @@ function summarizeForPlot(text) {
 
 let _apiHistoryVersion = 0;
 function _bumpApiVersion() { _apiHistoryVersion++; }
-
-async function compressHistory(history) {
-  // Only compress when > 22 messages (system + summary + 20 recent = 22 stable state)
-  if (history.length <= 22) return history;
-
-  const systemMsg = history[0];
-  const toCompress = history.slice(1, history.length - 20);
-  const recentMessages = history.slice(-20);
-
-  const compressSystemPrompt = '你是一个故事摘要助手，将以下对话精炼为300字以内的第三人称故事摘要，保留关键人物、地点、物品、重要事件';
-
-  const compressMessages = [
-    { role: 'system', content: compressSystemPrompt },
-    ...toCompress
-  ];
-
-  try {
-    const summary = await callAPI(compressMessages);
-    const trimmed = summary.trim().slice(0, 350); // ~300 chars but allow slight overflow
-    return [systemMsg, { role: 'user', content: '【故事摘要】' + trimmed }, ...recentMessages];
-  } catch (e) {
-    // Silent degradation — return original history on failure
-    return history;
-  }
-}
 
 async function compressMemory(turnCount) {
   const version = _apiHistoryVersion;
@@ -3037,14 +2977,9 @@ async function getSlotInfo(n, opt_cloudSlots) {
     if (slots) {
       var cs = slots.find(function(s) { return s.slot === n; });
       if (cs) {
-        var sdata = cs.save_data ? (typeof cs.save_data === 'string' ? JSON.parse(cs.save_data) : cs.save_data) : {};
         cloudInfo = {
           playerName: cs.character_name || '???',
           worldGenre: cs.world_name || '???',
-          worldName: sdata.worldName || cs.world_name || '—',
-          charGender: sdata.charGender || (sdata.characterSheet && sdata.characterSheet.gender) || '—',
-          turnCount: sdata.turnCount !== undefined ? sdata.turnCount : '—',
-          preview: sdata.preview || '',
           level: 1,
           savedAt: cs.updated_at || '',
           source: 'cloud',
@@ -3063,10 +2998,6 @@ async function getSlotInfo(n, opt_cloudSlots) {
         localInfo = {
           playerName: s.playerName || '???',
           worldGenre: s.worldGenre || '???',
-          worldName: s.worldName || s.worldGenre || '—',
-          charGender: s.charGender || (s.characterSheet && s.characterSheet.gender) || '—',
-          turnCount: s.turnCount !== undefined ? s.turnCount : '—',
-          preview: s.preview || '',
           level: (s.stats && s.stats.level) ? s.stats.level : 1,
           savedAt: s.savedAt || '',
           source: 'local',
@@ -3148,20 +3079,8 @@ async function showSaveManager() {
     html += '<div class="save-slot' + (info ? '' : ' empty') + '">';
     html += '<div class="slot-num">槽位 ' + (i + 1) + (info && info.source === 'cloud' ? ' ☁️' : (info ? ' 💻' : '')) + '</div>';
     if (info) {
-      var charGender = info.charGender || '—';
-      var world = escapeHtml(info.worldName || info.worldGenre || '—');
-      var charName = escapeHtml(info.playerName);
-      var genderLabel = escapeHtml(charGender);
-      html += '<div class="slot-header">';
-      html += '<span class="slot-world">' + world + '</span>';
-      html += '<span class="slot-char">' + charName + ' · ' + genderLabel + '</span>';
-      html += '</div>';
-      if (info.preview) {
-        html += '<div class="slot-preview">' + escapeHtml(info.preview) + '</div>';
-      }
-      var turnText = info.turnCount !== '—' ? '第 ' + info.turnCount + ' 轮' : '';
-      var timeText = info.savedAt ? formatSaveTimeShort(info.savedAt) : '';
-      html += '<div class="slot-meta">' + (turnText ? turnText + ' · ' : '') + timeText + (info.source === 'cloud' ? ' · 云端' : ' · 本地') + '</div>';
+      html += '<div class="slot-info">' + escapeHtml(info.playerName) + ' <span>|</span> ' + escapeHtml(info.worldGenre) + '</div>';
+      html += '<div class="slot-time">' + formatSaveTime(info.savedAt) + (info.source === 'cloud' ? ' · 云端' : ' · 本地') + '</div>';
       html += '<div class="slot-actions">';
       html += '<button class="load-btn" onclick="loadSlot(' + i + ')">📂 读取</button>';
       html += '<button class="save-btn" onclick="saveToSlot(' + i + ')">💾 覆盖</button>';
@@ -3192,13 +3111,6 @@ function formatSaveTime(iso) {
   var d = new Date(iso);
   if (isNaN(d.getTime())) return '';
   return d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
-         String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-}
-function formatSaveTimeShort(iso) {
-  if (!iso) return '';
-  var d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  return (d.getMonth()+1) + '月' + d.getDate() + '日 ' +
          String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 }
 function escapeHtml(str) {
@@ -3281,14 +3193,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target === e.currentTarget) closeOverlay();
   });
 
+  // ── GameJam: apply competition config ──
+  if (GAME_CONFIG.JAM_BUILD) {
+    // Hide API key input if configured
+    if (GAME_CONFIG.HIDE_API_INPUT) {
+      var apiSection = document.getElementById('api-key-section');
+      if (apiSection) { apiSection.style.display = 'none'; }
+    }
+    // Use built-in API key
+    if (GAME_CONFIG.DEEPSEEK_API_KEY) {
+      state.apiKey = GAME_CONFIG.DEEPSEEK_API_KEY;
+    }
+    // Auto guest login for instant play
+    if (GAME_CONFIG.DEFAULT_GUEST_MODE && !currentUser) {
+      guestLogin();
+    }
+  }
+
   // Check for saved game on load (scoped to current identity)
   refreshTitleButtons();
-  // Also restore saved API key if any
-  var savedApiKey = localStorage.getItem('text_adventure_apikey');
-  if (savedApiKey) {
-    state.apiKey = savedApiKey;
-    var apiInput = document.getElementById('api-key-input');
-    if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
+  // Also restore saved API key if any (only if not using GameJam built-in)
+  if (!(GAME_CONFIG.JAM_BUILD && GAME_CONFIG.DEEPSEEK_API_KEY)) {
+    var savedApiKey = localStorage.getItem('text_adventure_apikey');
+    if (savedApiKey) {
+      state.apiKey = savedApiKey;
+      var apiInput = document.getElementById('api-key-input');
+      if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
+    }
   }
 
   // Add narrative-end marker
@@ -3296,7 +3227,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   endMarker.id = 'narrative-end';
   document.getElementById('narrative-area').appendChild(endMarker);
 
-  // Keyboard-aware input dock is managed in showScreen() via visualViewport resize
+  // Mobile: prevent soft keyboard from obscuring input area
+  if (window.visualViewport) {
+    const gameScreen = document.getElementById('game-screen');
+    window.visualViewport.addEventListener('resize', () => {
+      const vh = window.visualViewport.height;
+      const wh = window.innerHeight;
+      if (vh < wh - 80) {
+        gameScreen.style.height = vh + 'px';
+      } else {
+        gameScreen.style.height = '';
+      }
+    });
+  }
 });
 
 // ═══════════════════ EXPORT STORY ═══════════════════
