@@ -1079,7 +1079,6 @@ function showScreen(name) {
   if (name === 'game') {
     updateStatsBar();
     document.getElementById('command-input').focus();
-    document.getElementById('command-input').focus();
     // Scroll-aware stats bar: hide when reading, show when scrolling up
     var narrativeArea = document.getElementById('narrative-area');
     var statsBar = document.getElementById('stats-bar');
@@ -3533,12 +3532,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check for saved game on load (scoped to current identity)
   refreshTitleButtons();
   // Also restore saved API key if any
-  var savedApiKey = localStorage.getItem('text_adventure_apikey');
-  if (savedApiKey) {
-    state.apiKey = savedApiKey;
-    var apiInput = document.getElementById('api-key-input');
-    if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
-  }
+  _loadApiKey().then(function(k) {
+    if (k) {
+      state.apiKey = k;
+      var apiInput = document.getElementById('api-key-input');
+      if (apiInput && !apiInput.value) apiInput.value = k;
+    }
+  }).catch(function(e) { console.error('Failed to load API key', e); });
 
   // Add narrative-end marker
   const endMarker = document.createElement('div');

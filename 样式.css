@@ -13,16 +13,10 @@
   --accent-a04: rgba(139,117,40,0.04);
   --accent-a06: rgba(139,117,40,0.06);
   --accent-a08: rgba(139,117,40,0.08);
-  --accent-a10: rgba(139,117,40,0.10);
   --accent-a12: rgba(139,117,40,0.12);
-  --accent-a14: rgba(139,117,40,0.14);
-  --accent-a15: rgba(139,117,40,0.15);
-  --accent-a20: rgba(139,117,40,0.20);
   --accent-a22: rgba(139,117,40,0.22);
   --accent-a28: rgba(139,117,40,0.28);
   --accent-br06: rgba(212,175,55,0.06);
-  --accent-br10: rgba(212,175,55,0.10);
-  --accent-br25: rgba(212,175,55,0.25);
   --danger: #8b3a3a;
   --danger-bright: #c47a7a;
   --magic: #6a4a9a;
@@ -297,6 +291,10 @@ body::before {
   inset: 0;
   background: rgba(0,0,0,0.6);
   backdrop-filter: blur(4px);
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 .login-modal-panel {
   position: relative;
@@ -1702,14 +1700,6 @@ body::before {
   .suggestion-btn { padding: 5px 8px; font-size: 11px; min-height: 32px; letter-spacing: 0.5px; }
   #suggestion-buttons { flex-wrap: wrap; gap: 5px; }
 
-  /* ── Action Bar ── */
-  #action-bar { padding: 4px 2px; gap: 0; }
-  #action-bar button {
-    padding: 4px 6px; min-width: 40px; min-height: 44px;
-    font-size: 18px; gap: 1px;
-  }
-  #action-bar button span { display: none; }
-
   /* ── Input Area ── */
   #input-area { padding: 8px 8px 10px; gap: 6px; }
   #input-prompt { font-size: 14px; }
@@ -1816,8 +1806,6 @@ body::before {
   .stat-item .val { font-size: 9px; }
   .stat-sep { display: none; }
 
-  #action-bar button { min-width: 36px; font-size: 16px; padding: 4px 4px; }
-
   #input-area { padding: 6px 6px 8px; gap: 5px; }
   #command-input { font-size: 13px; padding: 8px 8px; }
   #btn-send { padding: 8px 10px; font-size: 10px; }
@@ -1840,9 +1828,6 @@ body::before {
   #narrative-area { padding: 10px 12px 6px; }
   .narrative-entry { margin-bottom: 14px; }
   #suggestion-bar { min-height: 32px; padding: 4px 8px; }
-  #action-bar { padding: 2px 2px; }
-  #action-bar button { min-height: 36px; font-size: 16px; }
-  #action-bar button span { display: none; }
   #input-area { padding: 6px 10px 8px; }
   .overlay-panel { max-height: 95vh; }
 }
