@@ -9,7 +9,7 @@
 <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 
 <title>异界卷 · 文字冒险</title>
-<link rel="stylesheet" href="样式.css?v=0.7.1">
+<link rel="stylesheet" href="样式.css?v=0.7.2">
 </head>
 <body>
 
@@ -18,7 +18,7 @@
   <div class="title-main">
     <h1>异 界 卷</h1>
     <p class="subtitle">自 由 文 字 冒 险</p>
-    <p class="version-tag">v0.7.1「全屏沉浸」</p>
+    <p class="version-tag">v0.7.2「极简视界」</p>
   </div>
   <div class="title-actions">
     <div class="settings-section" style="margin-bottom:16px">
@@ -202,36 +202,26 @@
 <div id="game-screen" class="screen hidden">
   <div id="stats-bar">
     <div id="stats-items"></div>
-    <button class="font-ctrl" onclick="changeFontSize(-1)" title="缩小字号">A-</button>
-    <button class="font-ctrl" onclick="changeFontSize(1)" title="放大字号">A+</button>
     <div id="location-tag"></div>
     <div id="destiny-tag" style="display:none;cursor:default;font-size:13px;color:var(--accent-bright);padding:2px 6px" title=""></div>
+    <button class="font-ctrl" onclick="changeFontSize(-1)" title="缩小字号">A-</button>
+    <button class="font-ctrl" onclick="changeFontSize(1)" title="放大字号">A+</button>
+    <button class="menu-btn" onclick="toggleMenuDrawer()" title="系统菜单">☰</button>
   </div>
 
   <div id="narrative-area"></div>
 
   <div id="input-dock">
-  <div id="suggestion-bar">
-    <button id="btn-suggest" class="suggestion-ask-btn" onclick="requestSuggestions()">💡 行动建议</button>
-    <button id="btn-daredevil" class="suggestion-ask-btn daredevil-btn" onclick="daredevilAction()">💀 作死一下</button>
-    <div id="suggestion-buttons"></div>
-  </div>
-
-  <div id="action-bar">
-    <button onclick="showAnnals()">📜<span>年表</span></button>
-    <button onclick="showInventory()">📦<span>物品</span></button>
-    <button onclick="showRelationships()">💞<span>羁绊</span></button>
-    <button onclick="saveGame()">💾<span>保存</span></button>
-    <button onclick="exportStory()">📄<span>导出</span></button>
-    <button onclick="showAchievements()">🏆<span>成就</span></button>
-    <button onclick="showScreen('title')">🚪<span>退出</span></button>
-  </div>
-
-  <div id="input-area">
-    <span id="input-prompt">▸</span>
-    <input type="text" id="command-input" placeholder="你要做什么？" autocomplete="off" maxlength="500">
-    <button id="btn-send">发送 ↵</button>
-  </div>
+    <div id="suggestion-bar">
+      <button id="btn-suggest" class="suggestion-ask-btn" onclick="requestSuggestions()">💡</button>
+      <button id="btn-daredevil" class="suggestion-ask-btn daredevil-btn" onclick="daredevilAction()">💀</button>
+      <div id="suggestion-buttons"></div>
+    </div>
+    <div id="input-area">
+      <span id="input-prompt">▸</span>
+      <input type="text" id="command-input" placeholder="你要做什么？" autocomplete="off" maxlength="500">
+      <button id="btn-send">发送</button>
+    </div>
   </div>
 </div>
 
@@ -240,11 +230,31 @@
   <div class="overlay-panel" id="overlay-content"></div>
 </div>
 
+<!-- ═══════════════════ DRAWER MENU ═══════════════════ -->
+<div id="menu-drawer" class="menu-drawer hidden">
+  <div class="menu-drawer-bg" onclick="toggleMenuDrawer()"></div>
+  <div class="menu-drawer-panel">
+    <div class="menu-drawer-header">
+      <h3>系统菜单</h3>
+      <button class="menu-drawer-close" onclick="toggleMenuDrawer()">×</button>
+    </div>
+    <div class="menu-drawer-grid">
+      <button onclick="showAnnals(); toggleMenuDrawer()">📜<span>世界年表</span></button>
+      <button onclick="showInventory(); toggleMenuDrawer()">📦<span>随身物品</span></button>
+      <button onclick="showRelationships(); toggleMenuDrawer()">💞<span>角色羁绊</span></button>
+      <button onclick="saveGame(); toggleMenuDrawer()">💾<span>保存读取</span></button>
+      <button onclick="exportStory(); toggleMenuDrawer()">📄<span>导出故事</span></button>
+      <button onclick="showAchievements(); toggleMenuDrawer()">🏆<span>成就图鉴</span></button>
+      <button onclick="showScreen('title'); toggleMenuDrawer()" class="danger-btn">🚪<span>退出游戏</span></button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════ TOAST ═══════════════════ -->
 <div id="toast"></div>
 
 <div id="achievement-popup" class="achievement-popup hidden"></div>
-<script src="数据.js?v=0.7.1"></script>
-<script src="游戏.js?v=0.7.1"></script>
+<script src="数据.js?v=0.7.2"></script>
+<script src="游戏.js?v=0.7.2"></script>
 </body>
 </html>

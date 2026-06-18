@@ -1079,16 +1079,7 @@ function showScreen(name) {
   if (name === 'game') {
     updateStatsBar();
     document.getElementById('command-input').focus();
-    // Mobile: keyboard-aware input dock
-    if (window.visualViewport) {
-      _visualViewportHandler = function () {
-        var dock = document.getElementById('input-dock');
-        if (!dock) return;
-        var offsetY = window.innerHeight - window.visualViewport.height;
-        dock.style.transform = 'translateY(-' + offsetY + 'px)';
-      };
-      window.visualViewport.addEventListener('resize', _visualViewportHandler);
-    }
+    document.getElementById('command-input').focus();
     // Scroll-aware stats bar: hide when reading, show when scrolling up
     var narrativeArea = document.getElementById('narrative-area');
     var statsBar = document.getElementById('stats-bar');
@@ -1115,12 +1106,6 @@ function showScreen(name) {
     };
     narrativeArea.addEventListener('scroll', _statsBarScrollHandler, { passive: true });
   } else if (oldScreen === 'game') {
-    if (_visualViewportHandler) {
-      window.visualViewport.removeEventListener('resize', _visualViewportHandler);
-      _visualViewportHandler = null;
-      var dock = document.getElementById('input-dock');
-      if (dock) dock.style.transform = '';
-    }
     if (_statsBarScrollHandler) {
       var oldNarrative = document.getElementById('narrative-area');
       if (oldNarrative) oldNarrative.removeEventListener('scroll', _statsBarScrollHandler);
@@ -1873,7 +1858,6 @@ ${worldState}
 // ═══════════════════ API CALL ═══════════════════
 let _activeAbortController = null;
 let _lastFailedCommand = '';
-let _visualViewportHandler = null;
 let _statsBarScrollHandler = null;
 
 function abortPendingRequest() {
@@ -2878,6 +2862,16 @@ function updateStatsBar() {
   }
 }
 
+// ═══════════════════ MENU DRAWER ═══════════════════
+function toggleMenuDrawer() {
+  const drawer = document.getElementById('menu-drawer');
+  if (drawer.classList.contains('hidden')) {
+    drawer.classList.remove('hidden');
+  } else {
+    drawer.classList.add('hidden');
+  }
+}
+
 // ═══════════════════ INVENTORY ═══════════════════
 function showInventory() {
   const overlay = document.getElementById('overlay');
@@ -3524,8 +3518,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const endMarker = document.createElement('div');
   endMarker.id = 'narrative-end';
   document.getElementById('narrative-area').appendChild(endMarker);
-
-  // Keyboard-aware input dock is managed in showScreen() via visualViewport resize
 });
 
 // ═══════════════════ EXPORT STORY ═══════════════════
