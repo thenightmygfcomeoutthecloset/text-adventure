@@ -82,10 +82,10 @@ body::before {
 .hidden { display:none !important; }
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
 /* ── Selection ── */
 ::selection { background: rgba(212,175,55,0.25); color: var(--text-bright); }
@@ -994,6 +994,13 @@ body::before {
 }
 #suggestion-bar::-webkit-scrollbar { display: none; }
 
+#stats-bar::after, #suggestion-bar::after {
+  content: '';
+  display: block;
+  min-width: 12px;
+  flex-shrink: 0;
+}
+
 .suggestion-ask-btn {
   background: rgba(18,17,24,0.85);
   backdrop-filter: blur(8px);
@@ -1565,7 +1572,7 @@ body::before {
   .freq-card { padding: 20px 12px; }
   .freq-icon { font-size: 32px; margin-bottom: 10px; }
   .freq-name { font-size: 16px; letter-spacing: 3px; margin-bottom: 6px; }
-  .freq-desc { font-size: 10px; line-height: 1.5; }
+  .freq-desc { font-size: 11px; line-height: 1.5; }
 
   /* ── Genre Grid ── */
   .genre-grid { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 6px; }
@@ -1573,13 +1580,13 @@ body::before {
   .genre-card { padding: 12px 8px; }
   .genre-card .icon { font-size: 22px; margin-bottom: 6px; }
   .genre-card .name { font-size: 12px; margin-bottom: 3px; }
-  .genre-card .desc { font-size: 10px; line-height: 1.4; }
+  .genre-card .desc { font-size: 11px; line-height: 1.4; }
   .btn-random-all { font-size: 12px; padding: 8px 20px; letter-spacing: 2px; }
 
   /* ── Character Creation ── */
   .cc-section { margin-bottom: 16px; }
   .cc-section .cc-label { font-size: 12px; letter-spacing: 2px; margin-bottom: 8px; }
-  .cc-section .cc-label .cc-desc { font-size: 10px; display: block; margin-left: 0; margin-top: 2px; }
+  .cc-section .cc-label .cc-desc { font-size: 11px; display: block; margin-left: 0; margin-top: 2px; }
   .cc-options { gap: 5px; }
   .cc-option { padding: 6px 10px; font-size: 11px; min-height: 34px; }
   .cc-random { padding: 5px 10px; font-size: 11px; min-height: 30px; }
@@ -1593,7 +1600,7 @@ body::before {
 
   /* ── Stats Bar ── */
   #stats-bar {
-    gap: 6px; padding: 6px 8px; font-size: 10px;
+    gap: 6px; padding: 6px 8px; font-size: 11px;
     min-height: 34px; max-height: 60px;
     flex-wrap: nowrap;
   }
@@ -1601,10 +1608,10 @@ body::before {
   .stat-item { gap: 1px; }
   .stat-item .stat-icon { font-size: 11px; width: 14px; }
   .stat-item .stat-label { display: none; }
-  .stat-item .val { font-size: 10px; min-width: 14px; }
+  .stat-item .val { font-size: 11px; min-width: 14px; }
   .stat-sep { margin: 0 2px; height: 12px; }
-  .font-ctrl { padding: 2px 4px; font-size: 9px; }
-  #location-tag { font-size: 10px; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .font-ctrl { padding: 2px 4px; font-size: 11px; }
+  #location-tag { font-size: 11px; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #destiny-tag { font-size: 11px !important; }
 
   /* ── Narrative Area ── */
@@ -1613,7 +1620,7 @@ body::before {
   .narrative-entry .world-response { font-size: calc(14px * var(--font-scale)); line-height: 1.72; letter-spacing: 0.2px; }
   .narrative-entry .player-action { font-size: 11px; margin-bottom: 10px; padding-left: 8px; }
   .dice-roll { font-size: 11px; padding: 6px 12px; margin-bottom: 10px; }
-  .scene-title { font-size: 10px; letter-spacing: 4px; padding: 14px 0 8px; }
+  .scene-title { font-size: 11px; letter-spacing: 4px; padding: 14px 0 8px; }
 
   /* ── Suggestion Bar ── */
   #suggestion-bar {
@@ -1622,8 +1629,8 @@ body::before {
     flex-wrap: wrap;
     justify-content: flex-start;
   }
-  .suggestion-ask-btn { padding: 5px 10px; font-size: 11px; letter-spacing: 1px; min-height: 32px; }
-  .suggestion-btn { padding: 5px 8px; font-size: 11px; min-height: 32px; letter-spacing: 0.5px; }
+  .suggestion-ask-btn { padding: 8px 14px; font-size: 12px; letter-spacing: 1px; min-height: 40px; }
+  .suggestion-btn { padding: 8px 12px; font-size: 12px; min-height: 40px; letter-spacing: 0.5px; }
   #suggestion-buttons { flex-wrap: wrap; gap: 5px; }
 
   /* ── Action Bar ── */
@@ -1672,8 +1679,8 @@ body::before {
   /* ── Bond Cards ── */
   .bond-card { padding: 12px 14px; }
   .bond-name { font-size: 14px; }
-  .bond-title { font-size: 10px; }
-  .bond-level { font-size: 10px; }
+  .bond-title { font-size: 11px; }
+  .bond-level { font-size: 11px; }
   .bond-notes { font-size: 11px; }
 
   /* ── Annals ── */
@@ -1686,19 +1693,19 @@ body::before {
   .ach-card { padding: 10px 12px; gap: 8px; }
   .ach-card .ach-card-icon { font-size: 20px; width: 28px; }
   .ach-card .ach-card-name { font-size: 12px; }
-  .ach-card .ach-card-desc { font-size: 9px; }
+  .ach-card .ach-card-desc { font-size: 11px; }
 
   /* ── Achievement Popup — top center on mobile ── */
   .achievement-popup {
     bottom: auto; right: auto;
-    top: 16px; left: 50%;
-    transform: translateX(-50%) translateY(-120%);
+    top: max(60px, env(safe-area-inset-top, 60px)); left: 50%;
+    transform: translateX(-50%) translateY(-150%);
     max-width: 85vw; min-width: 200px;
   }
   .achievement-popup.show { transform: translateX(-50%) translateY(0); }
   .achievement-popup .ach-icon-wrap { width: 36px; height: 36px; font-size: 18px; }
   .achievement-popup .ach-name { font-size: 13px; }
-  .achievement-popup .ach-desc { font-size: 10px; }
+  .achievement-popup .ach-desc { font-size: 11px; }
 
   /* ── Toast ── */
   #toast { max-width: 88vw; font-size: 12px; padding: 8px 18px; word-break: break-word; }
@@ -1731,20 +1738,20 @@ body::before {
   .genre-card { padding: 10px 6px; }
   .genre-card .icon { font-size: 20px; margin-bottom: 4px; }
   .genre-card .name { font-size: 11px; }
-  .genre-card .desc { font-size: 9px; display: none; }
+  .genre-card .desc { font-size: 11px; display: none; }
 
-  .cc-option { padding: 5px 8px; font-size: 10px; min-height: 30px; }
+  .cc-option { padding: 5px 8px; font-size: 11px; min-height: 36px; }
   .gender-option { padding: 6px 12px; font-size: 12px; min-height: 34px; }
 
   #stats-bar { gap: 4px; padding: 5px 6px; }
-  .stat-item .val { font-size: 9px; }
+  .stat-item .val { font-size: 11px; }
   .stat-sep { display: none; }
 
   #action-bar button { min-width: 36px; font-size: 16px; padding: 4px 4px; }
 
   #input-area { padding: 6px 6px 8px; gap: 5px; }
   #command-input { font-size: 13px; padding: 8px 8px; }
-  #btn-send { padding: 8px 10px; font-size: 10px; }
+  #btn-send { padding: 8px 10px; font-size: 11px; }
   #input-prompt { display: none; }
 
   .overlay-panel { padding: 16px 10px; }
