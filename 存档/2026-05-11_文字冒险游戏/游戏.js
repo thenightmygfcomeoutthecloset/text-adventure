@@ -2424,8 +2424,6 @@ function scrollToBottom() {
     var area = document.getElementById('narrative-area');
     if (!area) return;
     area.scrollTop = area.scrollHeight;
-    var lastNode = area.lastElementChild;
-    if (lastNode) lastNode.scrollIntoView({ behavior: 'smooth', block: 'end' });
   });
 }
 
