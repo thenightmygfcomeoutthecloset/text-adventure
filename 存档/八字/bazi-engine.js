@@ -53,34 +53,20 @@ export const CITY_LONGITUDES = [
 
 /**
  * 计算真太阳时 (True Solar Time)
- * @param {number} year 
- * @param {number} month 
- * @param {number} day 
- * @param {number} hour (0-23)
- * @param {number} minute (0-59)
- * @param {number} longitude 经度 (例如 116.40)
- * @returns {object} 真太阳时调整后的日期时间对象与分钟偏移量
  */
 export function calculateTrueSolarTime(year, month, day, hour, minute, longitude) {
-    // 1. 经度时差 (与120°E基准线相差，每度相差4分钟)
     const longitudeOffsetMinutes = (longitude - 120.0) * 4;
-
-    // 2. 简易均时差 (Equation of Time, EOT) 估算 (单位: 分钟)
-    // 根据一年中的第几天 N 计算
     const startOfYear = new Date(year, 0, 1);
     const currentDate = new Date(year, month - 1, day);
     const dayOfYear = Math.floor((currentDate - startOfYear) / (24 * 60 * 60 * 1000)) + 1;
     const b = (2 * Math.PI * (dayOfYear - 81)) / 364;
     const eotMinutes = 9.87 * Math.sin(2 * b) - 7.53 * Math.cos(b) - 1.5 * Math.sin(b);
 
-    // 总调整分钟数
     const totalOffsetMinutes = Math.round(longitudeOffsetMinutes + eotMinutes);
 
-    // 构造实际调整后的 Date
     const baseDate = new Date(year, month - 1, day, hour, minute);
     const adjustedDate = new Date(baseDate.getTime() + totalOffsetMinutes * 60 * 1000);
 
-    // 调整后的真太阳时时辰地支 (0=子时 23:00-00:59, 1=丑时 01:00-02:59, ...)
     const adjHour = adjustedDate.getHours();
     const adjMinute = adjustedDate.getMinutes();
 
@@ -110,6 +96,7 @@ export function calculateTrueSolarTime(year, month, day, hour, minute, longitude
 export const TIAN_GAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
 export const DI_ZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 export const WU_XING_NAMES = ['木', '火', '土', '金', '水'];
+export const WU_XING_EN = ['wood', 'fire', 'earth', 'metal', 'water'];
 export const STEM_TO_ELEMENT = [0, 0, 1, 1, 2, 2, 3, 3, 4, 4];
 export const BRANCH_TO_ELEMENT = [4, 2, 0, 0, 2, 1, 1, 2, 3, 3, 2, 4];
 
@@ -210,6 +197,17 @@ export function getTenGod(dayStem, otherStem) {
     return '未知';
 }
 
+export function getTenGodCategory(tenGod) {
+    const map = {
+        '比肩': 'companion', '劫财': 'rob',
+        '食神': 'eating',    '伤官': 'hurting',
+        '偏财': 'indirect_wealth', '正财': 'direct_wealth',
+        '七杀': 'seven_kill',     '正官': 'direct_officer',
+        '偏印': 'indirect_seal',  '正印': 'direct_seal',
+    };
+    return map[tenGod] || 'unknown';
+}
+
 function analyzeWuXing(pillars) {
     const counts = [0, 0, 0, 0, 0];
     for (const p of pillars) {
@@ -303,10 +301,8 @@ export const SHENG_XIAO = ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊
  * 主入口：排盘（支持真太阳时经度校正）
  */
 export function calculateBaZi(year, month, day, hour, minute, longitude = 120.0, gender = 'male') {
-    // 1. 真太阳时校正
     const trueSolar = calculateTrueSolarTime(year, month, day, hour, minute, longitude);
 
-    // 2. 使用真太阳时调整后的年月日时进行排盘
     const yearPillar = getYearPillar(trueSolar.adjustedYear, trueSolar.adjustedMonth, trueSolar.adjustedDay);
     const monthPillar = getMonthPillar(trueSolar.adjustedYear, trueSolar.adjustedMonth, trueSolar.adjustedDay, yearPillar.stem);
     const dayPillar = getDayPillar(trueSolar.adjustedYear, trueSolar.adjustedMonth, trueSolar.adjustedDay);
