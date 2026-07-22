@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="2026下半年运势测算 — 基于生辰八字四柱命理，精准分析您的事业、财运、感情、健康与贵人运势。">
+    <title>2026下半年 · 命运星盘 — 生辰八字运势测算</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 星空背景 Canvas -->
+    <canvas id="starCanvas"></canvas>
+
+    <!-- 加载遮罩 -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-bagua"></div>
+        <div class="loading-text">紫微星盘推演中…</div>
+    </div>
+
+    <div class="app-container">
+
+        <!-- ======== 首屏 Hero ======== -->
+        <section class="hero-section">
+            <div class="hero-badge">☯ 丙午年 · 四柱命理</div>
+            <h1 class="hero-title">2026 下半年<br>你的运势如何？</h1>
+            <p class="hero-subtitle">输入你的生辰，解锁专属命盘<br>洞悉未来六个月的运势密码</p>
+            <p class="hero-year-info">流年 <span>丙午</span> · 火马之年 · 下半年运势精析</p>
+        </section>
+
+        <div class="divider">✦ 请输入生辰 ✦</div>
+
+        <!-- ======== 输入表单 ======== -->
+        <section class="input-section" id="inputSection">
+            <div class="form-card">
+                <h2 class="form-title">📜 生辰信息</h2>
+                <form id="birthForm">
+                    <div class="form-grid">
+                        <!-- 年 -->
+                        <div class="form-group">
+                            <label class="form-label" for="birthYear">出生年份</label>
+                            <select class="form-select" id="birthYear" required></select>
+                        </div>
+                        <!-- 月 -->
+                        <div class="form-group">
+                            <label class="form-label" for="birthMonth">出生月份</label>
+                            <select class="form-select" id="birthMonth" required></select>
+                        </div>
+                        <!-- 日 -->
+                        <div class="form-group">
+                            <label class="form-label" for="birthDay">出生日期</label>
+                            <select class="form-select" id="birthDay" required></select>
+                        </div>
+                    </div>
+
+                    <!-- 时辰 -->
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label class="form-label" for="birthHour">出生时辰</label>
+                        <select class="form-select" id="birthHour">
+                            <option value="-1">不确定时辰</option>
+                            <option value="0">子时 (23:00-00:59)</option>
+                            <option value="1">丑时 (01:00-02:59)</option>
+                            <option value="2">寅时 (03:00-04:59)</option>
+                            <option value="3">卯时 (05:00-06:59)</option>
+                            <option value="4">辰时 (07:00-08:59)</option>
+                            <option value="5">巳时 (09:00-10:59)</option>
+                            <option value="6">午时 (11:00-12:59)</option>
+                            <option value="7">未时 (13:00-14:59)</option>
+                            <option value="8">申时 (15:00-16:59)</option>
+                            <option value="9">酉时 (17:00-18:59)</option>
+                            <option value="10">戌时 (19:00-20:59)</option>
+                            <option value="11">亥时 (21:00-22:59)</option>
+                        </select>
+                    </div>
+
+                    <!-- 性别 -->
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">性别</label>
+                        <div class="gender-row">
+                            <label class="gender-option active" id="genderMale">
+                                <input type="radio" name="gender" value="male" checked>
+                                🚹 男
+                            </label>
+                            <label class="gender-option" id="genderFemale">
+                                <input type="radio" name="gender" value="female">
+                                🚺 女
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submitBtn">开 始 测 算</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- ======== 结果区域 ======== -->
+        <section class="result-section" id="resultSection">
+
+            <!-- 四柱八字 -->
+            <div class="pillars-section">
+                <div class="divider">✦ 四柱八字 ✦</div>
+                <h2 class="section-title">你的命盘</h2>
+                <div class="pillars-grid" id="fourPillars">
+                    <!-- JS 动态渲染 -->
+                </div>
+            </div>
+
+            <!-- 日主解析 -->
+            <div class="daymaster-section">
+                <div class="divider">✦ 日主解析 ✦</div>
+                <div class="daymaster-card" id="dayMasterCard">
+                    <!-- JS 动态渲染 -->
+                </div>
+            </div>
+
+            <!-- 五行分布 -->
+            <div class="wuxing-section">
+                <div class="divider">✦ 五行能量 ✦</div>
+                <h2 class="section-title">五行分布</h2>
+                <div class="wuxing-card" id="wuXingCard">
+                    <!-- JS 动态渲染 -->
+                </div>
+            </div>
+
+            <!-- 幸运提示 -->
+            <div class="lucky-section">
+                <div class="divider">✦ 开运指南 ✦</div>
+                <h2 class="section-title">幸运提示</h2>
+                <div class="lucky-card" id="luckyCard">
+                    <!-- JS 动态渲染 -->
+                </div>
+            </div>
+
+            <!-- 月度运势 -->
+            <div class="fortune-section">
+                <div class="divider">✦ 逐月运势 ✦</div>
+                <h2 class="section-title">2026 下半年运势详解</h2>
+                <div class="month-cards" id="monthCards">
+                    <!-- JS 动态渲染 -->
+                </div>
+            </div>
+
+            <!-- 综合趋势 -->
+            <div class="trend-section">
+                <div class="divider">✦ 运势走向 ✦</div>
+                <h2 class="section-title">半年运势趋势</h2>
+                <div class="trend-card" id="trendCard">
+                    <div class="trend-chart-container">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                    <div class="trend-summary" id="trendSummary">
+                        <!-- JS 动态渲染 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 重新测算 -->
+            <div style="text-align: center; margin-bottom: 40px;">
+                <button class="restart-btn" id="restartBtn">☯ 重新测算</button>
+            </div>
+        </section>
+
+        <!-- ======== 页脚 ======== -->
+        <footer class="app-footer">
+            <div class="footer-deco">☯</div>
+            <p>本测算基于传统四柱命理学简化演算，仅供娱乐参考</p>
+            <p>命由己造，运随心转 · 2026 丙午年</p>
+        </footer>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
