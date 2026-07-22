@@ -1,10 +1,5 @@
 /**
  * 命运星盘 — 统一应用控制器 (app.js)
- * 
- * 核心功能：
- * - 首页 Portal 与 导航模式切换 ('portal' | 'bazi' | 'tarot')
- * - 八字表单初始化、城市经度加载、真太阳时 (True Solar Time) 实时换算
- * - 塔罗牌 3D 洗牌、选择、翻牌动画与报告
  */
 
 import { calculateBaZi, CITY_LONGITUDES } from './bazi-engine.js';
@@ -13,7 +8,7 @@ import { TAROT_SPREADS, generateCardSvg } from './tarot-data.js';
 import { shuffleDeck, performReading } from './tarot-engine.js';
 
 // 全局状态
-let activeMode = 'portal'; // 'portal' | 'bazi' | 'tarot'
+let activeMode = 'portal';
 
 // 塔罗状态
 let tarotSpread = TAROT_SPREADS[0];
@@ -25,7 +20,7 @@ let tarotStep = 'init';
 //  1. 页面模式与导航控制器
 // ============================================================
 
-function switchMode(mode) {
+export function switchMode(mode) {
     activeMode = mode;
 
     const portalSection = document.getElementById('portalSection');
@@ -38,7 +33,6 @@ function switchMode(mode) {
         tarot: document.getElementById('navTarotBtn'),
     };
 
-    // 按钮样式
     Object.keys(navBtns).forEach(k => {
         if (navBtns[k]) {
             if (k === mode) navBtns[k].classList.add('active');
@@ -46,35 +40,47 @@ function switchMode(mode) {
         }
     });
 
-    // 区域隐藏与展示
-    portalSection.classList.add('hidden');
-    baziSection.classList.add('hidden');
-    tarotSection.classList.add('hidden');
+    if (portalSection) portalSection.classList.add('hidden');
+    if (baziSection) baziSection.classList.add('hidden');
+    if (tarotSection) tarotSection.classList.add('hidden');
 
-    if (mode === 'portal') {
+    if (mode === 'portal' && portalSection) {
         portalSection.classList.remove('hidden');
-    } else if (mode === 'bazi') {
+    } else if (mode === 'bazi' && baziSection) {
         baziSection.classList.remove('hidden');
-    } else if (mode === 'tarot') {
+    } else if (mode === 'tarot' && tarotSection) {
         tarotSection.classList.remove('hidden');
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function initNavigation() {
-    document.getElementById('navLogo').addEventListener('click', () => switchMode('portal'));
-    document.getElementById('navHomeBtn').addEventListener('click', () => switchMode('portal'));
-    document.getElementById('navBaziBtn').addEventListener('click', () => switchMode('bazi'));
-    document.getElementById('navTarotBtn').addEventListener('click', () => switchMode('tarot'));
+// 暴露出 switchMode 给全局全局调用
+window.switchMode = switchMode;
 
-    document.getElementById('portalBaziCard').addEventListener('click', () => switchMode('bazi'));
-    document.getElementById('portalTarotCard').addEventListener('click', () => switchMode('tarot'));
+function initNavigation() {
+    const bindClick = (id, mode) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', (e) => { e.preventDefault(); switchMode(mode); });
+    };
+
+    bindClick('navLogo', 'portal');
+    bindClick('navHomeBtn', 'portal');
+    bindClick('navBaziBtn', 'bazi');
+    bindClick('navTarotBtn', 'tarot');
+    bindClick('portalBaziCard', 'bazi');
+    bindClick('portalTarotCard', 'tarot');
 }
 
 // ============================================================
 //  2. 八字模块 (含出生城市与真太阳时计算)
 // ============================================================
+
+export function resetBaziForm() {
+    document.getElementById('baziFormCard').classList.remove('hidden');
+    document.getElementById('baziResultSection').classList.add('hidden');
+}
+window.resetBaziForm = resetBaziForm;
 
 function initBaziForm() {
     const yearSelect = document.getElementById('birthYear');
@@ -83,6 +89,8 @@ function initBaziForm() {
     const hourSelect = document.getElementById('birthHour');
     const minuteSelect = document.getElementById('birthMinute');
     const citySelect = document.getElementById('birthCity');
+
+    if (!yearSelect) return;
 
     // 年
     for (let y = 2026; y >= 1940; y--) {
@@ -121,7 +129,7 @@ function initBaziForm() {
     monthSelect.addEventListener('change', updateDays);
     updateDays();
 
-    // 小时 (0-23)
+    // 小时
     for (let h = 0; h < 24; h++) {
         const opt = document.createElement('option');
         opt.value = h;
@@ -130,7 +138,7 @@ function initBaziForm() {
         hourSelect.appendChild(opt);
     }
 
-    // 分钟 (0-59)
+    // 分钟
     for (let min = 0; min < 60; min += 5) {
         const opt = document.createElement('option');
         opt.value = min;
@@ -138,8 +146,8 @@ function initBaziForm() {
         minuteSelect.appendChild(opt);
     }
 
-    // 出生城市 (含经度)
-    CITY_LONGITUDES.forEach((c, idx) => {
+    // 城市
+    CITY_LONGITUDES.forEach((c) => {
         const opt = document.createElement('option');
         opt.value = c.lng;
         opt.textContent = `${c.province} - ${c.city} (${c.lng}°E)`;
@@ -147,11 +155,13 @@ function initBaziForm() {
         citySelect.appendChild(opt);
     });
 
-    // 性别切换
+    // 性别
     const gMale = document.getElementById('genderMale');
     const gFemale = document.getElementById('genderFemale');
-    gMale.addEventListener('click', () => { gMale.classList.add('active'); gFemale.classList.remove('active'); });
-    gFemale.addEventListener('click', () => { gFemale.classList.add('active'); gMale.classList.remove('active'); });
+    if (gMale && gFemale) {
+        gMale.addEventListener('click', () => { gMale.classList.add('active'); gFemale.classList.remove('active'); });
+        gFemale.addEventListener('click', () => { gFemale.classList.add('active'); gMale.classList.remove('active'); });
+    }
 
     // 表单提交
     document.getElementById('baziForm').addEventListener('submit', handleBaziSubmit);
@@ -166,7 +176,8 @@ function handleBaziSubmit(e) {
     const hour = parseInt(document.getElementById('birthHour').value);
     const minute = parseInt(document.getElementById('birthMinute').value);
     const longitude = parseFloat(document.getElementById('birthCity').value);
-    const gender = document.querySelector('input[name="gender"]:checked').value;
+    const genderEl = document.querySelector('input[name="gender"]:checked');
+    const gender = genderEl ? genderEl.value : 'male';
 
     showLoading('紫微真太阳时推演中…');
 
@@ -179,11 +190,10 @@ function handleBaziSubmit(e) {
         hideLoading();
         document.getElementById('baziFormCard').classList.add('hidden');
         document.getElementById('baziResultSection').classList.remove('hidden');
-    }, 1500);
+    }, 1200);
 }
 
 function renderBaziResults(bazi, fortune) {
-    // 1. 真太阳时提示 Banner
     const banner = document.getElementById('solarTimeBanner');
     const ts = bazi.trueSolar;
     const offsetStr = ts.offsetMinutes >= 0 ? `+${ts.offsetMinutes}` : `${ts.offsetMinutes}`;
@@ -195,7 +205,6 @@ function renderBaziResults(bazi, fortune) {
         • 校正后真太阳时：<code>${ts.adjustedTime}</code>（以真太阳时判定时柱与日柱）
     `;
 
-    // 2. 四柱
     const pillarsContainer = document.getElementById('fourPillars');
     pillarsContainer.innerHTML = '';
     const keys = ['year', 'month', 'day', 'hour'];
@@ -216,7 +225,6 @@ function renderBaziResults(bazi, fortune) {
         pillarsContainer.appendChild(card);
     });
 
-    // 3. 日主
     const dm = fortune.dayMasterDesc;
     document.getElementById('dayMasterCard').innerHTML = `
         <h3 style="color: var(--gold-light); font-family: var(--font-serif); margin-bottom: 8px;">
@@ -228,7 +236,6 @@ function renderBaziResults(bazi, fortune) {
         </div>
     `;
 
-    // 4. 五行
     const wx = bazi.wuXing;
     let wxHtml = '<div style="display: flex; gap: 12px; margin-bottom: 16px;">';
     wx.names.forEach((name, i) => {
@@ -243,7 +250,6 @@ function renderBaziResults(bazi, fortune) {
     </div>`;
     document.getElementById('wuXingCard').innerHTML = wxHtml;
 
-    // 5. 幸运提示
     const lucky = fortune.luckyInfo;
     document.getElementById('luckyCard').innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; text-align: center;">
@@ -254,9 +260,7 @@ function renderBaziResults(bazi, fortune) {
         </div>
     `;
 
-    // 6. 2026下半年逐月
-    const monthCards = document.getElementById('monthCards');
-    monthCards.innerHTML = fortune.months.map(m => `
+    document.getElementById('monthCards').innerHTML = fortune.months.map(m => `
         <div style="background:var(--bg-card); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:20px; margin-bottom:16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                 <div style="font-family:var(--font-serif); font-size:1.1rem; color:var(--gold-light);">
@@ -270,7 +274,6 @@ function renderBaziResults(bazi, fortune) {
         </div>
     `).join('');
 
-    // 7. 趋势总结
     document.getElementById('trendSummary').innerHTML = `
         <div style="text-align:center; padding:16px; background:rgba(255,255,255,0.03); border-radius:12px;">
             <div style="font-size:0.75rem; color:var(--text-muted);">整体走向</div>
@@ -289,6 +292,8 @@ function renderBaziResults(bazi, fortune) {
 
 function initTarot() {
     const grid = document.getElementById('spreadGrid');
+    if (!grid) return;
+
     grid.innerHTML = TAROT_SPREADS.map((s, idx) => `
         <div class="spread-card ${idx === 0 ? 'active' : ''}" data-id="${s.id}">
             <div class="spread-name">${s.name}</div>
@@ -306,8 +311,11 @@ function initTarot() {
     });
 
     resetTarotStage();
-    document.getElementById('tarotActionBtn').addEventListener('click', handleTarotShuffle);
-    document.getElementById('tarotResetBtn').addEventListener('click', () => {
+    const actionBtn = document.getElementById('tarotActionBtn');
+    const resetBtn = document.getElementById('tarotResetBtn');
+
+    if (actionBtn) actionBtn.addEventListener('click', handleTarotShuffle);
+    if (resetBtn) resetBtn.addEventListener('click', () => {
         document.getElementById('readingStage').style.display = 'block';
         resetTarotStage();
     });
@@ -317,11 +325,15 @@ function resetTarotStage() {
     tarotStep = 'init';
     tarotSelectedIndexes = [];
     document.getElementById('stageStatus').textContent = '点击下方按钮开启洗牌仪式';
-    document.getElementById('tarotActionBtn').textContent = '开 始 洗 牌';
-    document.getElementById('tarotActionBtn').style.display = 'inline-block';
+    const actionBtn = document.getElementById('tarotActionBtn');
+    if (actionBtn) {
+        actionBtn.textContent = '开 始 洗 牌';
+        actionBtn.style.display = 'inline-block';
+    }
     document.getElementById('tarotResultsSection').classList.add('hidden');
 
     const container = document.getElementById('deckContainer');
+    if (!container) return;
     container.innerHTML = '';
     for (let i = 0; i < 6; i++) {
         const c = document.createElement('div');
@@ -414,22 +426,22 @@ function displayTarotResults() {
     `;
 }
 
-// ============================================================
-//  4. 助手工具与 Canvas 背景
-// ============================================================
-
 function showLoading(text) {
     const el = document.getElementById('loadingOverlay');
-    document.getElementById('loadingText').textContent = text;
-    el.classList.add('active');
+    if (el) {
+        document.getElementById('loadingText').textContent = text;
+        el.classList.add('active');
+    }
 }
 
 function hideLoading() {
-    document.getElementById('loadingOverlay').classList.remove('active');
+    const el = document.getElementById('loadingOverlay');
+    if (el) el.classList.remove('active');
 }
 
 function initCanvas() {
     const canvas = document.getElementById('appCanvas');
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     let w = canvas.width = window.innerWidth;
     let h = canvas.height = window.innerHeight;
@@ -456,10 +468,8 @@ function initCanvas() {
     animate();
 }
 
-// 初始化
-document.addEventListener('DOMContentLoaded', () => {
-    initCanvas();
-    initNavigation();
-    initBaziForm();
-    initTarot();
-});
+// 初始化执行
+initCanvas();
+initNavigation();
+initBaziForm();
+initTarot();

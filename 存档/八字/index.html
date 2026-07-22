@@ -21,11 +21,11 @@
 
         <!-- ======== 顶部导航 / 模式切换 ======== -->
         <nav class="top-nav">
-            <div class="nav-logo" id="navLogo">☯ 命运星盘</div>
+            <div class="nav-logo" id="navLogo" onclick="window.switchMode && window.switchMode('portal')">☯ 命运星盘</div>
             <div class="nav-links">
-                <button class="nav-btn active" id="navHomeBtn">首页入口</button>
-                <button class="nav-btn" id="navBaziBtn">八字命理</button>
-                <button class="nav-btn" id="navTarotBtn">神秘塔罗</button>
+                <button class="nav-btn active" id="navHomeBtn" onclick="window.switchMode && window.switchMode('portal')">首页入口</button>
+                <button class="nav-btn" id="navBaziBtn" onclick="window.switchMode && window.switchMode('bazi')">八字命理</button>
+                <button class="nav-btn" id="navTarotBtn" onclick="window.switchMode && window.switchMode('tarot')">神秘塔罗</button>
             </div>
         </nav>
 
@@ -37,19 +37,19 @@
 
             <div class="portal-grid">
                 <!-- 八字入口卡片 -->
-                <div class="portal-card" id="portalBaziCard">
+                <div class="portal-card" id="portalBaziCard" onclick="window.switchMode && window.switchMode('bazi')">
                     <div class="portal-icon">☯</div>
                     <h2 class="portal-card-title">生辰八字 · 四柱命理</h2>
                     <p class="portal-card-desc">基于精准真太阳时经度校正，推算八字五行强弱、喜用神及 2026 下半年 6 个月流月运势走势。</p>
-                    <button class="portal-action-btn">开启八字排盘 ➔</button>
+                    <button class="portal-action-btn" onclick="window.switchMode && window.switchMode('bazi')">开启八字排盘 ➔</button>
                 </div>
 
                 <!-- 塔罗入口卡片 -->
-                <div class="portal-card" id="portalTarotCard">
+                <div class="portal-card" id="portalTarotCard" onclick="window.switchMode && window.switchMode('tarot')">
                     <div class="portal-icon">🔮</div>
                     <h2 class="portal-card-title">神秘塔罗 · 心灵启示</h2>
                     <p class="portal-card-desc">22 张大阿卡纳牌、3D 洗牌与抽牌体验，提供 2026 下半年流月牌阵与经典时间之流问答。</p>
-                    <button class="portal-action-btn">开启塔罗占卜 ➔</button>
+                    <button class="portal-action-btn" onclick="window.switchMode && window.switchMode('tarot')">开启塔罗占卜 ➔</button>
                 </div>
             </div>
         </section>
@@ -57,7 +57,7 @@
 
         <!-- ======== 2. 八字命理模块 ======== -->
         <section class="bazi-section hidden" id="baziSection">
-            <div class="section-header">
+            <div class="section-header" style="text-align: center; margin-bottom: 24px;">
                 <div class="hero-badge">☯ 东方四柱命理</div>
                 <h2 class="hero-title">八字排盘与下半年运势</h2>
                 <p class="hero-subtitle">请输入您的公历出生时间与出生地点，系统将自动校正真太阳时</p>
@@ -142,13 +142,17 @@
                     </div>
                     <div class="trend-summary" id="trendSummary"></div>
                 </div>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <button class="action-btn" onclick="window.resetBaziForm && window.resetBaziForm()">☯ 重新排盘</button>
+                </div>
             </div>
         </section>
 
 
         <!-- ======== 3. 神秘塔罗模块 ======== -->
         <section class="tarot-section hidden" id="tarotSection">
-            <div class="section-header">
+            <div class="section-header" style="text-align: center; margin-bottom: 24px;">
                 <div class="hero-badge">🔮 西方塔罗占卜</div>
                 <h2 class="hero-title">神秘塔罗 · 心灵启示</h2>
                 <p class="hero-subtitle">洗净杂念，选择牌阵，探寻命运的隐秘答复</p>
