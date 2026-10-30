@@ -14,7 +14,17 @@ function makeId() { return 'u_' + Math.random().toString(36).slice(2, 10) + Date
 
 // ═══════════════════ SCOPED STORAGE ═══════════════════
 // All save data is now keyed by identity scope — guest vs cloud accounts are fully isolated.
+function ensureIdentity() {
+  if (currentUser) return currentUser;
+  var guest = getOrCreateGuestIdentity();
+  saveIdentity(guest);
+  currentUser = { id: guest.id, email: guest.email, displayName: guest.displayName, type: 'guest' };
+  updateAuthUI();
+  return currentUser;
+}
+
 function getStorageScope() {
+  if (!currentUser) ensureIdentity();
   if (!currentUser) return null;
   if (currentUser.type === 'guest') return 'guest:' + currentUser.id;
   if (currentUser.type === 'cloud') return 'cloud:' + currentUser.id;
@@ -85,6 +95,9 @@ function initIdentity() {
         }
       }
     } catch(e) { supabaseSession = null; }
+  }
+  if (!currentUser) {
+    ensureIdentity();
   }
   updateAuthUI();
 }
@@ -218,6 +231,14 @@ async function localRegister(input, password) {
       updateAuthUI();
       closeAuthModal();
       toast('注册成功，「' + display + '」已登录 ☁️');
+      if (oldIdentity && (oldIdentity.type === 'guest' || !oldIdentity.type) && oldIdentity.id !== suid) {
+        migrateSaves(oldIdentity.id, suid).then(function(mRes) {
+          if (mRes && mRes.migrated > 0) {
+            toast('已将 ' + mRes.migrated + ' 个游客存档同步至云端 ☁️' + (mRes.skipped > 0 ? '（' + mRes.skipped + ' 个已保留云端原进度）' : ''));
+            refreshTitleButtons();
+          }
+        }).catch(function(err) { console.warn('Migration task error', err); });
+      }
       refreshTitleButtons();
       return true;
     } else {
@@ -257,6 +278,14 @@ async function localSignIn(input, password) {
     updateAuthUI();
     closeAuthModal();
     toast('已登录云端账号，可跨设备同步存档。');
+    if (oldIdentity && (oldIdentity.type === 'guest' || !oldIdentity.type) && oldIdentity.id !== suid) {
+      migrateSaves(oldIdentity.id, suid).then(function(mRes) {
+        if (mRes && mRes.migrated > 0) {
+          toast('已将 ' + mRes.migrated + ' 个游客存档同步至云端 ☁️' + (mRes.skipped > 0 ? '（' + mRes.skipped + ' 个已保留云端原进度）' : ''));
+          refreshTitleButtons();
+        }
+      }).catch(function(err) { console.warn('Migration task error', err); });
+    }
     refreshTitleButtons();
     return true;
   }
@@ -309,6 +338,10 @@ function updateAuthUI() {
       emailEl.title = '账号: ' + currentUser.email + '\n类型: ' + (currentUser.type === 'cloud' ? '云端账号' : '游客') + '\n点击修改用户名';
       emailEl.style.cursor = 'pointer';
       emailEl.onclick = changeDisplayName;
+    }
+    var upgradeBtn = document.getElementById('btn-cloud-upgrade');
+    if (upgradeBtn) {
+      upgradeBtn.style.display = (currentUser.type === 'guest') ? '' : 'none';
     }
   } else {
     if (loggedOut) loggedOut.classList.remove('hidden');
@@ -400,42 +433,38 @@ function handleRegister() {
   });
 }
 function refreshTitleLocalSaveButtons() {
-  // Only guest/cloud with no cloud session show local-scoped saves
-  if (hasCloud()) {
-    // Cloud user: hide local-only buttons, cloud refresh handles button visibility
-    return;
-  }
-
   var scope = getStorageScope();
   if (!scope) {
-    // No current user — hide all
-    var btnContinue = document.getElementById('btn-continue');
-    var btnLoadSlot = document.getElementById('btn-load-slot');
-    if (btnContinue) btnContinue.style.display = 'none';
-    if (btnLoadSlot) btnLoadSlot.style.display = 'none';
+    resetTitleSaveButtons();
     return;
   }
 
+  // Check current-identity scoped local auto-save immediately
   var autoKey = getAutoSaveKey();
   var raw = autoKey ? localStorage.getItem(autoKey) : null;
-  var hasSave = !!raw;
-  var btnContinue = document.getElementById('btn-continue');
-  var btnLoadSlot = document.getElementById('btn-load-slot');
-  if (hasSave) {
+  var hasLocalAuto = false;
+  if (raw) {
     try {
       var save = JSON.parse(raw);
-      if (save.gameStarted) { btnContinue.style.display = ''; }
-      else { btnContinue.style.display = 'none'; }
-    } catch(e) { btnContinue.style.display = 'none'; }
-  } else {
-    btnContinue.style.display = 'none';
+      if (save.gameStarted && !(save.stats && save.stats.hp !== undefined && save.stats.hp <= 0)) {
+        hasLocalAuto = true;
+      }
+    } catch(e) {}
   }
-  // Check for scoped manual save slots
+  var btnContinue = document.getElementById('btn-continue');
+  if (btnContinue && hasLocalAuto) btnContinue.style.display = '';
+
+  // Check current-identity scoped manual save slots
   var hasSlots = false;
   for (var i = 0; i < SAVE_SLOTS; i++) {
-    if (localStorage.getItem(getSaveKey(i))) { hasSlots = true; break; }
+    var slotNum = i + 1;
+    if (localStorage.getItem(getSaveKey(slotNum)) || localStorage.getItem(getSaveKey(i))) {
+      hasSlots = true;
+      break;
+    }
   }
-  if (btnLoadSlot) btnLoadSlot.style.display = hasSlots ? '' : 'none';
+  var btnLoadSlot = document.getElementById('btn-load-slot');
+  if (btnLoadSlot && hasSlots) btnLoadSlot.style.display = '';
 }
 
 function resetTitleSaveButtons() {
@@ -464,7 +493,6 @@ async function refreshTitleCloudSaveButtons() {
   try {
     var result = await cloudListSlots();
     // Guard: user may have logged out or switched accounts during async
-    // Also guard: if another cloud refresh started after us, discard stale results
     if (seq !== _cloudRefreshSeq) return;
     if (!hasCloud()) return;
     var currentCloudUser = getCloudUser();
@@ -482,21 +510,12 @@ async function refreshTitleCloudSaveButtons() {
     var btnLoadSlot = document.getElementById('btn-load-slot');
     if (btnLoadSlot) btnLoadSlot.style.display = '';
 
-    // "继续游戏" button — show if cloud has auto-save AND no current-identity-scoped local auto-save
-    var hasAutoSave = slots.some(function(s) { return s.slot === AUTO_SAVE_SLOT; });
-    if (!hasAutoSave) return;
-    var autoKey = getAutoSaveKey();
-    var localRaw = autoKey ? localStorage.getItem(autoKey) : null;
-    if (localRaw) {
-      try { if (JSON.parse(localRaw).gameStarted === true) return; } catch(e) {}
+    // "继续游戏" button — show if cloud has active auto-save (slot 0)
+    var cloudAuto = slots.find(function(s) { return s.slot === AUTO_SAVE_SLOT; });
+    if (cloudAuto) {
+      var btnContinue = document.getElementById('btn-continue');
+      if (btnContinue) btnContinue.style.display = '';
     }
-    var savedKey = await _loadApiKey();
-    if (savedKey) {
-      var apiInput = document.getElementById('api-key-input');
-      if (apiInput && !apiInput.value) apiInput.value = savedKey;
-    }
-    var btnContinue = document.getElementById('btn-continue');
-    if (btnContinue) btnContinue.style.display = '';
   } catch(e) {
     if (seq !== _cloudRefreshSeq) return;
     console.warn('[Cloud] 云端存档检查异常：' + (e.message || '未知错误'));
@@ -683,35 +702,56 @@ function stripApiKeyFromSave(snap) {
   return clean;
 }
 
-async function cloudSave(slot) {
+var _cloudSaveQueues = {}; // key: userId + ':' + slot -> Promise chain
+
+async function cloudSave(slot, opt_snap, opt_userId) {
   if (!hasCloud()) return { ok: false, error: '未登录云端账号' };
   var cloudUser = getCloudUser();
   if (!cloudUser || !cloudUser.id) return { ok: false, error: '无法获取云端用户信息' };
-  try {
-    var snap = serializeState();
-    var clean = stripApiKeyFromSave(snap);
-    var row = {
-      user_id: cloudUser.id,
-      slot: slot,
-      save_data: clean,
-      title: (snap.plot && snap.plot.chapterTitle) ? ('第' + snap.plot.chapter + '章 ' + snap.plot.chapterTitle) : '',
-      world_name: snap.worldGenre || '',
-      character_name: snap.playerName || ''
-    };
-    // Upsert via POST with Prefer: resolution=merge-duplicates
-    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?on_conflict=user_id,slot', {
-      method: 'POST',
-      headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates,return=representation' }, cloudDbHeaders()),
-      body: JSON.stringify(row)
-    });
-    if (!resp.ok) {
-      var errText = await resp.text().catch(function() { return 'HTTP ' + resp.status; });
-      return { ok: false, error: '云端保存失败 (' + resp.status + '): ' + errText };
-    }
-    return { ok: true, data: row };
-  } catch(e) {
-    return { ok: false, error: '云端保存失败：' + (e.message || '未知错误') };
+
+  var targetUserId = opt_userId || cloudUser.id;
+  if (targetUserId !== cloudUser.id) {
+    return { ok: false, error: '账号已切换，取消保存' };
   }
+
+  // Use synchronously captured snapshot if provided, otherwise capture now
+  var snap = opt_snap || serializeState();
+  var clean = stripApiKeyFromSave(snap);
+  var row = {
+    user_id: targetUserId,
+    slot: slot,
+    save_data: clean,
+    title: (snap.plot && snap.plot.chapterTitle) ? ('第' + snap.plot.chapter + '章 ' + snap.plot.chapterTitle) : '',
+    world_name: snap.worldGenre || '',
+    character_name: snap.playerName || ''
+  };
+
+  // Serialize requests per user and slot to eliminate race conditions
+  var qKey = targetUserId + ':' + slot;
+  var execTask = async function() {
+    if (!hasCloud()) return { ok: false, error: '未登录云端账号' };
+    var cur = getCloudUser();
+    if (!cur || cur.id !== targetUserId) {
+      return { ok: false, error: '账号已切换，跳过保存' };
+    }
+    try {
+      var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?on_conflict=user_id,slot', {
+        method: 'POST',
+        headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates,return=representation' }, cloudDbHeaders()),
+        body: JSON.stringify(row)
+      });
+      if (!resp.ok) {
+        var errText = await resp.text().catch(function() { return 'HTTP ' + resp.status; });
+        return { ok: false, error: '云端保存失败 (' + resp.status + '): ' + errText };
+      }
+      return { ok: true, data: row };
+    } catch(e) {
+      return { ok: false, error: '云端保存失败：' + (e.message || '未知错误') };
+    }
+  };
+
+  _cloudSaveQueues[qKey] = (_cloudSaveQueues[qKey] || Promise.resolve()).then(execTask, execTask);
+  return _cloudSaveQueues[qKey];
 }
 
 async function cloudLoad(slot) {
@@ -756,7 +796,7 @@ async function cloudListSlots() {
   var cloudUser = getCloudUser();
   if (!cloudUser || !cloudUser.id) return { ok: false, error: '无法获取云端用户信息', data: [] };
   try {
-    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?select=slot,title,world_name,character_name,updated_at&user_id=eq.' + encodeURIComponent(cloudUser.id) + '&order=updated_at.desc', {
+    var resp = await fetch(SUPABASE_URL + '/rest/v1/game_saves?select=slot,title,world_name,character_name,updated_at,save_data&user_id=eq.' + encodeURIComponent(cloudUser.id) + '&order=updated_at.desc', {
       headers: cloudDbHeaders()
     });
     if (!resp.ok) {
@@ -771,55 +811,96 @@ async function cloudListSlots() {
 
 // ── Migration (upload scoped local saves to cloud, best-effort) ──
 async function migrateSaves(oldId, newId) {
-  if (!oldId || oldId === newId) return;
-  if (!hasCloud()) return;
+  if (!oldId || oldId === newId) return { migrated: 0, skipped: 0 };
+  if (!hasCloud()) return { migrated: 0, skipped: 0 };
 
   var guestScopePrefix = 'text_adventure_save:guest:' + oldId;
+  var cloudScopePrefix = 'text_adventure_save:cloud:' + newId;
+
+  var migratedCount = 0;
+  var skippedCount = 0;
 
   try {
-    // Auto-save — try scoped guest key first, then old global key
+    // 1. Check existing cloud slots so we never overwrite existing cloud progress
+    var existingCloud = await cloudListSlots();
+    var existingSlots = (existingCloud.ok && existingCloud.data) ? existingCloud.data.map(function(s) { return s.slot; }) : [];
+
+    // 2. Auto-save (slot 0)
     var asRaw = localStorage.getItem(guestScopePrefix + ':auto');
     if (!asRaw) asRaw = localStorage.getItem('text_adventure_save');
     if (asRaw) {
-      var snap = JSON.parse(asRaw);
-      if (snap.gameStarted) {
-        var clean = stripApiKeyFromSave(snap);
-        await fetch(SUPABASE_URL + '/rest/v1/game_saves?on_conflict=user_id,slot', {
-          method: 'POST',
-          headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, cloudDbHeaders()),
-          body: JSON.stringify({
-            user_id: newId, slot: 0,
-            save_data: clean,
-            title: (snap.plot && snap.plot.chapterTitle) ? ('第' + snap.plot.chapter + '章 ' + snap.plot.chapterTitle) : '',
-            world_name: snap.worldGenre || '',
-            character_name: snap.playerName || ''
-          })
-        });
-      }
+      try {
+        var snap = JSON.parse(asRaw);
+        if (snap && snap.gameStarted) {
+          if (existingSlots.includes(0)) {
+            skippedCount++; // Protect cloud save
+          } else {
+            var clean = stripApiKeyFromSave(snap);
+            var saveResp = await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
+              method: 'POST',
+              headers: Object.assign({ 'Prefer': 'resolution=ignore-duplicates' }, cloudDbHeaders()),
+              body: JSON.stringify({
+                user_id: newId,
+                slot: 0,
+                save_data: clean,
+                title: (snap.plot && snap.plot.chapterTitle) ? ('第' + snap.plot.chapter + '章 ' + snap.plot.chapterTitle) : '',
+                world_name: snap.worldGenre || '',
+                character_name: snap.playerName || ''
+              })
+            });
+            if (saveResp.ok) {
+              migratedCount++;
+              if (!localStorage.getItem(cloudScopePrefix + ':auto')) {
+                localStorage.setItem(cloudScopePrefix + ':auto', asRaw);
+              }
+            }
+          }
+        }
+      } catch(e) {}
     }
-    // Manual slots (0-9) — try scoped guest keys first, then old global
+
+    // 3. Manual slots (0-9 -> slots 1-10)
     for (var s = 0; s < 10; s++) {
-      var raw = localStorage.getItem(guestScopePrefix + ':slot:' + s);
+      var slotNum = s + 1;
+      var raw = localStorage.getItem(guestScopePrefix + ':slot:' + slotNum);
+      if (!raw) raw = localStorage.getItem(guestScopePrefix + ':slot:' + s);
+      if (!raw) raw = localStorage.getItem('text_adventure_slot_' + slotNum);
       if (!raw) raw = localStorage.getItem('text_adventure_slot_' + s);
-      if (!raw) raw = localStorage.getItem('text_adventure_slot_' + (s + 1));
       if (raw) {
-        var ssnap = JSON.parse(raw);
-        var sclean = stripApiKeyFromSave(ssnap);
-        await fetch(SUPABASE_URL + '/rest/v1/game_saves?on_conflict=user_id,slot', {
-          method: 'POST',
-          headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, cloudDbHeaders()),
-          body: JSON.stringify({
-            user_id: newId, slot: s,
-            save_data: sclean,
-            title: '',
-            world_name: ssnap.worldGenre || '',
-            character_name: ssnap.playerName || ''
-          })
-        });
+        try {
+          var ssnap = JSON.parse(raw);
+          if (existingSlots.includes(slotNum)) {
+            skippedCount++;
+          } else {
+            var sclean = stripApiKeyFromSave(ssnap);
+            var saveResp = await fetch(SUPABASE_URL + '/rest/v1/game_saves', {
+              method: 'POST',
+              headers: Object.assign({ 'Prefer': 'resolution=ignore-duplicates' }, cloudDbHeaders()),
+              body: JSON.stringify({
+                user_id: newId,
+                slot: slotNum,
+                save_data: sclean,
+                title: (ssnap.plot && ssnap.plot.chapterTitle) ? ('第' + ssnap.plot.chapter + '章 ' + ssnap.plot.chapterTitle) : '',
+                world_name: ssnap.worldGenre || '',
+                character_name: ssnap.playerName || ''
+              })
+            });
+            if (saveResp.ok) {
+              migratedCount++;
+              if (!localStorage.getItem(cloudScopePrefix + ':slot:' + slotNum)) {
+                localStorage.setItem(cloudScopePrefix + ':slot:' + slotNum, raw);
+              }
+            }
+          }
+        } catch(e) {}
       }
     }
-    console.log('[Migrate] Guest saves uploaded to cloud under new user ID');
-  } catch(e) { console.warn('[Migrate] Migration failed:', e); }
+    console.log('[Migrate] Migration finished. Migrated: ' + migratedCount + ', Skipped: ' + skippedCount);
+    return { migrated: migratedCount, skipped: skippedCount };
+  } catch(e) {
+    console.warn('[Migrate] Migration failed:', e);
+    return { migrated: migratedCount, skipped: skippedCount, error: e };
+  }
 }
 
 function getWorldStatType(genre) {
@@ -947,7 +1028,7 @@ function serializeState() {
 
 function deserializeState(save) {
   state.apiKey = '';
-  _loadApiKey().then(function(k) { if (k) state.apiKey = k; });
+  _loadApiKey().then(function(k) { if (k) state.apiKey = k; }).catch(function(e) { console.warn('Failed to load API key', e); });
   state.worldGenre = save.worldGenre || '';
   state.customWorldDesc = save.customWorldDesc || '';
   state.playerName = save.playerName || '';
@@ -980,15 +1061,59 @@ function deserializeState(save) {
 // Auto-save slot: use 0 (was -1 in older versions, now unified)
 var AUTO_SAVE_SLOT = 0;
 
+// ═══════════════════ TURN SNAPSHOT SYSTEM ═══════════════════
+function captureTurnSnapshot() {
+  return {
+    stats: JSON.parse(JSON.stringify(state.stats || {})),
+    inventory: (state.inventory || []).slice(),
+    location: state.location || '',
+    locationHistory: (state.locationHistory || []).slice(),
+    worldMemory: state.worldMemory || '',
+    relationships: JSON.parse(JSON.stringify(state.relationships || [])),
+    plot: state.plot ? JSON.parse(JSON.stringify(state.plot)) : null,
+    annals: JSON.parse(JSON.stringify(state.annals || [])),
+    unlockedAchievements: (state.unlockedAchievements || []).slice(),
+    recklessCount: state.recklessCount || 0,
+    critFailCount: state.critFailCount || 0,
+    critSuccessCount: state.critSuccessCount || 0,
+    apiHistoryLength: (state.apiHistory || []).length,
+    fullHistoryLength: (state.fullHistory || []).length,
+  };
+}
+
+function restoreTurnSnapshot(snap) {
+  if (!snap) return;
+  state.stats = JSON.parse(JSON.stringify(snap.stats || {}));
+  state.inventory = (snap.inventory || []).slice();
+  state.location = snap.location || '';
+  state.locationHistory = (snap.locationHistory || []).slice();
+  state.worldMemory = snap.worldMemory || '';
+  state.relationships = JSON.parse(JSON.stringify(snap.relationships || []));
+  state.plot = snap.plot ? JSON.parse(JSON.stringify(snap.plot)) : null;
+  state.annals = JSON.parse(JSON.stringify(snap.annals || []));
+  state.unlockedAchievements = (snap.unlockedAchievements || []).slice();
+  state.recklessCount = snap.recklessCount || 0;
+  state.critFailCount = snap.critFailCount || 0;
+  state.critSuccessCount = snap.critSuccessCount || 0;
+  updateStatsBar();
+}
+
 function saveState() {
+  if (!state.gameStarted || (state.stats && state.stats.hp !== undefined && state.stats.hp <= 0)) return;
   var snap = serializeState();
   // Always save to scoped localStorage
   var autoKey = getAutoSaveKey();
   if (autoKey) localStorage.setItem(autoKey, JSON.stringify(snap));
-  // Cloud: also sync to Supabase
+  // Cloud: also sync to Supabase with immediate snapshot
   if (hasCloud()) {
-    cloudSave(AUTO_SAVE_SLOT).then(function(result) {
-      if (!result.ok) toast('本地缓存已保存，但云端同步失败：' + (result.error || '未知错误'), 'error');
+    var curUser = getCloudUser();
+    var curUserId = curUser ? curUser.id : null;
+    cloudSave(AUTO_SAVE_SLOT, snap, curUserId).then(function(result) {
+      if (!result.ok) {
+        console.warn('云端自动存档同步失败：' + (result.error || '未知错误'));
+      }
+    }).catch(function(err) {
+      console.warn('云端自动存档网络异常', err);
     });
   }
 }
@@ -1032,6 +1157,12 @@ function undoLast() {
     state.fullHistory.push(lastWorld);
   }
 
+  // Restore game state from turn snapshot if available
+  if (state._turnSnapshots && state._turnSnapshots.length > 0) {
+    var snap = state._turnSnapshots.pop();
+    restoreTurnSnapshot(snap);
+  }
+
   _bumpApiVersion();
   saveState();
   renderFullHistory();
@@ -1050,6 +1181,12 @@ async function regenerateLast() {
   var aiCommand = lastUser.content;
 
   var lastWorld = state.fullHistory.pop();
+
+  // Restore to the clean turn snapshot BEFORE this action was resolved
+  if (state._turnSnapshots && state._turnSnapshots.length > 0) {
+    var snap = state._turnSnapshots[state._turnSnapshots.length - 1];
+    restoreTurnSnapshot(snap);
+  }
 
   _bumpApiVersion();
   renderFullHistory();
@@ -1086,12 +1223,14 @@ async function regenerateLast() {
     state.fullHistory.push({ role: 'world', content: cleanResponse });
 
     updateGameStateFromResponse(response);
-    saveState();
-    
-    // Check death
+
+    // Check death BEFORE saving state
     if (state.stats.hp !== undefined && state.stats.hp <= 0) {
       handlePlayerDeath();
+      return;
     }
+
+    saveState();
   } catch (err) {
     removeThinkingIndicator();
     toast('重塑命运失败，已恢复原状', 'error');
@@ -1643,13 +1782,22 @@ async function aiGenerateCharacter() {
 
 // ═══════════════════ START GAME ═══════════════════
 async function startNewGame() {
-  const apiKey = state.apiKey;
+  ensureIdentity();
+  var apiKey = state.apiKey;
+  if (!apiKey) {
+    var loadedKey = await _loadApiKey();
+    if (loadedKey) { apiKey = loadedKey; state.apiKey = loadedKey; }
+  }
   if (!apiKey) { toast('请先设置 API 密钥', 'error'); return; }
   state.apiKey = apiKey;
 
-  const playerName = document.getElementById('player-name-input').value.trim();
-  const genre = state.worldGenre;
-  const customDesc = state.customWorldDesc;
+  var playerName = '';
+  var nameEl = document.getElementById('player-name-input');
+  if (nameEl && nameEl.value.trim()) playerName = nameEl.value.trim();
+  if (!playerName && state.playerName) playerName = state.playerName;
+
+  var genre = state.worldGenre;
+  var customDesc = state.customWorldDesc;
 
   if (!genre) { toast('请选择一个世界', 'error'); return; }
   if (!playerName) { toast('请输入你的名字', 'error'); return; }
@@ -1657,31 +1805,41 @@ async function startNewGame() {
 
   // Validate character creation
   if (genre !== '自定义') {
-    const template = CHARACTER_TEMPLATES[genre];
+    var template = CHARACTER_TEMPLATES[genre];
     if (template) {
-      for (const section of template) {
-        if (!state.characterSheet.attributes[section.id]) {
+      for (var sIdx = 0; sIdx < template.length; sIdx++) {
+        var section = template[sIdx];
+        if (!state.characterSheet || !state.characterSheet.attributes || !state.characterSheet.attributes[section.id]) {
           toast(`请选择「${section.label}」`, 'error'); return;
         }
       }
     }
   }
-  if (!state.characterSheet.gender) { toast('请选择性别', 'error'); return; }
+  if (!state.characterSheet || !state.characterSheet.gender) { toast('请选择性别', 'error'); return; }
 
   // Save custom character description for custom genre
   if (genre === '自定义') {
-    const customCharDesc = document.getElementById('custom-char-desc');
+    var customCharDesc = document.getElementById('custom-char-desc');
     if (customCharDesc) state.characterSheet.customDesc = customCharDesc.value.trim();
   }
+
+  // Preserve character sheet before clean reset
+  var savedCharSheet = JSON.parse(JSON.stringify(state.characterSheet));
+
+  // Reset full game state so no residual footprints, achievements or annals remain
+  resetGameState();
 
   state.apiKey = apiKey;
   state.worldGenre = genre;
   state.customWorldDesc = customDesc;
   state.playerName = playerName;
-  const worldConfig = getWorldStats(genre);
+  state.characterSheet = savedCharSheet;
+
+  var worldConfig = getWorldStats(genre);
   state.stats = { ...worldConfig.stats };
   state.inventory = [];
   state.location = '';
+  state.locationHistory = [];
   state.worldMemory = '';
   state.relationships = [];
   // Inject novel characters & key facts from processNovel() if available
@@ -2189,6 +2347,12 @@ async function sendCommand() {
     if (_inputHistory.length > 20) _inputHistory.shift();
   }
   _inputHistoryIdx = -1;
+
+  // Capture turn snapshot before this action mutates game state
+  if (!state._turnSnapshots) state._turnSnapshots = [];
+  state._turnSnapshots.push(captureTurnSnapshot());
+  if (state._turnSnapshots.length > 10) state._turnSnapshots.shift();
+
   setGameInputEnabled(false);
 
   // Dice roll for risky actions
@@ -2283,13 +2447,14 @@ async function sendCommand() {
     }
 
     checkAchievements();
-    saveState();
 
-    // Death check
+    // Death check: check death BEFORE saving state to avoid persisting dead character
     if (state.stats.hp !== undefined && state.stats.hp <= 0) {
       handlePlayerDeath();
       return;
     }
+
+    saveState();
   } catch (err) {
     removeThinkingIndicator();
 
@@ -2331,11 +2496,53 @@ function retryLastCommand() {
   sendCommand();
 }
 
+function resetGameState() {
+  state.screen = 'title';
+  state.gameStarted = false;
+  state.isDead = false;
+  state.stats = { ...DEFAULT_STATS };
+  state.inventory = [];
+  state.location = '';
+  state.locationHistory = [];
+  state.worldMemory = '';
+  state.relationships = [];
+  state.fullHistory = [];
+  state.apiHistory = [];
+  state.plot = null;
+  state.annals = [];
+  state.unlockedAchievements = [];
+  state.recklessCount = 0;
+  state.critFailCount = 0;
+  state.critSuccessCount = 0;
+  state._turnSnapshots = [];
+  _novelKeyFacts = null;
+  _novelCharacters = null;
+  var area = document.getElementById('narrative-area');
+  if (area) area.innerHTML = '<div id="narrative-end"></div>';
+  var sug = document.getElementById('suggestion-buttons');
+  if (sug) sug.innerHTML = '';
+}
+
 function handlePlayerDeath() {
   state.gameStarted = false;
+  state.isDead = true;
   const input = document.getElementById('command-input');
   setGameInputEnabled(false);
   if (input) input.placeholder = '结局已定...';
+
+  // Overwrite auto-save so Continue button won't restore a dead character
+  var autoKey = getAutoSaveKey();
+  if (autoKey) {
+    var raw = localStorage.getItem(autoKey);
+    if (raw) {
+      try {
+        var s = JSON.parse(raw);
+        s.gameStarted = false;
+        s.isDead = true;
+        localStorage.setItem(autoKey, JSON.stringify(s));
+      } catch(e) {}
+    }
+  }
 
   const area = document.getElementById('narrative-area');
   const deathEl = document.createElement('div');
@@ -2346,7 +2553,7 @@ function handlePlayerDeath() {
     <div style="font-size:14px;color:var(--text-dim);margin-bottom:24px">${escapeHtml(state.playerName)} 的故事在此画上句点。</div>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
       <button onclick="restartGame()" style="background:rgba(139,117,40,0.12);border:1px solid var(--accent);color:var(--accent-bright);padding:10px 28px;font-size:14px;font-family:var(--font-ui);cursor:pointer;border-radius:var(--radius);letter-spacing:3px;transition:all var(--transition-fast)">重新开始</button>
-      <button onclick="loadLastSave()" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:10px 28px;font-size:14px;font-family:var(--font-ui);cursor:pointer;border-radius:var(--radius);letter-spacing:3px;transition:all var(--transition-fast)">读取存档</button>
+      <button onclick="showSaveManager()" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:10px 28px;font-size:14px;font-family:var(--font-ui);cursor:pointer;border-radius:var(--radius);letter-spacing:3px;transition:all var(--transition-fast)">读取存档</button>
       <button onclick="showScreen('title')" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:10px 28px;font-size:14px;font-family:var(--font-ui);cursor:pointer;border-radius:var(--radius);letter-spacing:3px;transition:all var(--transition-fast)">返回标题</button>
     </div>
   </div>`;
@@ -2360,35 +2567,38 @@ function handlePlayerDeath() {
   if (daredevilBtn) daredevilBtn.style.display = 'none';
 }
 
-function restartGame() {
-  state.stats = { ...getWorldStats(state.worldGenre).stats };
-  state.inventory = [];
-  state.characterSheet = { gender: '', attributes: {} };
-  state.location = '';
-  state.locationHistory = [];
-  state.worldMemory = '';
-  state.relationships = [];
-  state.fullHistory = [];
-  state.apiHistory = [];
-  state.plot = getInitialPlot(state.worldGenre);
-  state.gameStarted = true;
-  state.annals = [];
-  state.unlockedAchievements = [];
-  state.recklessCount = 0;
-  state.critFailCount = 0;
-  state.critSuccessCount = 0;
-  const input = document.getElementById('command-input');
-  const btn = document.getElementById('btn-send');
+async function restartGame() {
+  var prevGenre = state.worldGenre;
+  var prevCustomDesc = state.customWorldDesc;
+  var prevName = state.playerName;
+  var prevGender = (state.characterSheet && state.characterSheet.gender) || '';
+  var prevAttrs = (state.characterSheet && state.characterSheet.attributes) ? Object.assign({}, state.characterSheet.attributes) : {};
+
+  resetGameState();
+
+  state.worldGenre = prevGenre;
+  state.customWorldDesc = prevCustomDesc;
+  state.playerName = prevName;
+  state.characterSheet = { gender: prevGender, attributes: prevAttrs };
+
+  var nameInput = document.getElementById('player-name-input');
+  if (nameInput) nameInput.value = prevName;
+
+  var input = document.getElementById('command-input');
+  var btn = document.getElementById('btn-send');
   setGameInputEnabled(true);
   if (input) input.placeholder = '你要做什么？';
   if (btn) btn.disabled = false;
-  const sBtn = document.getElementById('btn-suggest');
-  const dBtn = document.getElementById('btn-daredevil');
+  var sBtn = document.getElementById('btn-suggest');
+  var dBtn = document.getElementById('btn-daredevil');
   if (sBtn) sBtn.style.display = '';
   if (dBtn) dBtn.style.display = '';
-  showScreen('game');
-  // Trigger a fresh start
-  startNewGame();
+
+  if (prevGenre && prevName && (prevGenre === '自定义' || prevGender)) {
+    return await startNewGame();
+  } else {
+    showScreen('character');
+  }
 }
 
 async function loadLastSave() {
@@ -2403,52 +2613,85 @@ async function loadLastSave() {
   if (dBtn) dBtn.style.display = '';
 
   let loaded = false;
-  // Try cloud auto-save first
+  let source = '';
+
+  // 1. If cloud account, try cloud auto-save first
   if (hasCloud()) {
-    const result = await cloudLoad(AUTO_SAVE_SLOT);
-    if (result.ok && result.data && result.data.gameStarted) {
-      deserializeState(result.data);
-      loaded = true;
+    try {
+      const result = await cloudLoad(AUTO_SAVE_SLOT);
+      if (result.ok && result.data && result.data.gameStarted && !(result.data.stats && result.data.stats.hp !== undefined && result.data.stats.hp <= 0)) {
+        deserializeState(result.data);
+        loaded = true;
+        source = 'cloud';
+      }
+    } catch(e) {
+      console.warn('云端读取失败，尝试回退本地缓存', e);
     }
   }
-  // Fallback local
-  if (!loaded) loaded = loadSave();
+
+  // 2. If not loaded from cloud, try scoped local auto-save
+  if (!loaded) {
+    var autoKey = getAutoSaveKey();
+    if (autoKey) {
+      var raw = localStorage.getItem(autoKey);
+      if (raw) {
+        try {
+          var save = JSON.parse(raw);
+          if (save.gameStarted && !(save.stats && save.stats.hp !== undefined && save.stats.hp <= 0)) {
+            deserializeState(save);
+            loaded = true;
+            source = 'local';
+            if (hasCloud()) {
+              toast('云端未就绪，已读取当前账号本地缓存进度 💾');
+            }
+          }
+        } catch(e) {}
+      }
+    }
+  }
+
+  // 3. Fallback to manual slot 1 if no auto-save found
+  if (!loaded) {
+    if (hasCloud()) {
+      try {
+        const result = await cloudLoad(1);
+        if (result.ok && result.data) {
+          deserializeState(result.data);
+          loaded = true;
+          source = 'cloud';
+        }
+      } catch(e) {}
+    }
+    if (!loaded) {
+      var slot1Key = getSaveKey(1);
+      var slot1Raw = slot1Key ? localStorage.getItem(slot1Key) : null;
+      if (!slot1Raw) {
+        var legacyKey = getSaveKey(0);
+        slot1Raw = legacyKey ? localStorage.getItem(legacyKey) : null;
+      }
+      if (slot1Raw) {
+        try {
+          var s1 = JSON.parse(slot1Raw);
+          deserializeState(s1);
+          loaded = true;
+          source = 'local';
+        } catch(e) {}
+      }
+    }
+  }
 
   if (loaded) {
+    closeOverlay();
     showScreen('game');
     renderFullHistory();
     resetSuggestions();
-    document.getElementById('command-input').focus();
-  } else {
-    // Try loading from slot 0 manually
-    let slot0Loaded = false;
-    if (hasCloud()) {
-      const result = await cloudLoad(0);
-      if (result.ok && result.data) {
-        deserializeState(result.data);
-        slot0Loaded = true;
-      }
-    }
-    if (!slot0Loaded) {
-      var slotKey = getSaveKey(0);
-      if (slotKey) {
-        var raw = localStorage.getItem(slotKey);
-        if (raw) {
-          try { deserializeState(JSON.parse(raw)); slot0Loaded = true; } catch(e) {}
-        }
-      }
-    }
-    if (slot0Loaded) {
-      closeOverlay();
-      showScreen('game');
-      renderFullHistory();
-      resetSuggestions();
-      updateStatsBar();
+    updateStatsBar();
+    if (document.getElementById('command-input')) {
       document.getElementById('command-input').focus();
-    } else {
-      toast('没有找到存档', 'error');
-      showScreen('title');
     }
+  } else {
+    toast('没有找到有效存档或角色已终结', 'error');
+    showScreen('title');
   }
 }
 
@@ -3347,13 +3590,16 @@ function accountTypeLabel() {
 
 async function saveToSlot(n) {
   if (!state.gameStarted) return;
+  var slotNum = n + 1; // Manual slots use 1 ~ 10, reserving slot 0 strictly for auto-save
+  var snap = serializeState();
+
   // Save to scoped localStorage
-  var slotKey = getSaveKey(n);
-  if (slotKey) localStorage.setItem(slotKey, JSON.stringify(serializeState()));
+  var slotKey = getSaveKey(slotNum);
+  if (slotKey) localStorage.setItem(slotKey, JSON.stringify(snap));
 
   var cloudOk = false;
   if (hasCloud()) {
-    var result = await cloudSave(n);
+    var result = await cloudSave(slotNum, snap);
     cloudOk = result.ok;
     if (!result.ok) {
       toast('本地缓存已保存，但云端同步失败：' + (result.error || '未知错误'), 'error');
@@ -3361,30 +3607,45 @@ async function saveToSlot(n) {
   }
 
   if (cloudOk) {
-    toast('已保存到槽位 ' + (n + 1) + '｜云端同步成功 ✓');
+    toast('已保存到槽位 ' + slotNum + '｜云端同步成功 ✓');
   } else if (!hasCloud()) {
-    toast('已保存到槽位 ' + (n + 1) + '（游客模式：存档仅保存在当前浏览器） ✓');
+    toast('已保存到槽位 ' + slotNum + '（游客模式：存档仅保存在当前浏览器） ✓');
   }
   showSaveManager();
 }
 
 async function loadSlot(n) {
+  var slotNum = n + 1;
   var raw = null;
   var source = 'local';
 
-  // Cloud: try Supabase first (RLS ensures only current user's saves)
+  // Cloud: try Supabase first (using slotNum = n + 1)
   if (hasCloud()) {
-    var result = await cloudLoad(n);
+    var result = await cloudLoad(slotNum);
     if (result.ok && result.data) {
       raw = JSON.stringify(result.data);
       source = 'cloud';
+    } else if (n > 0) {
+      // Fallback check old 0-indexed cloud slot if n > 0 (avoiding 0 which is auto-save)
+      var fallbackRes = await cloudLoad(n);
+      if (fallbackRes.ok && fallbackRes.data) {
+        raw = JSON.stringify(fallbackRes.data);
+        source = 'cloud';
+      }
     }
   }
 
-  // Fallback to scoped local only — never read another identity's saves
+  // Fallback to scoped local (try slotNum, then legacy n, then legacy globals)
   if (!raw) {
-    var slotKey = getSaveKey(n);
+    var slotKey = getSaveKey(slotNum);
     if (slotKey) raw = localStorage.getItem(slotKey);
+    if (!raw) {
+      var oldKey = getSaveKey(n);
+      if (oldKey) raw = localStorage.getItem(oldKey);
+    }
+    if (!raw) {
+      raw = localStorage.getItem('text_adventure_slot_' + slotNum) || localStorage.getItem('text_adventure_slot_' + n);
+    }
   }
   if (!raw) { toast('槽位为空', 'error'); return; }
 
@@ -3396,32 +3657,37 @@ async function loadSlot(n) {
     renderFullHistory();
     resetSuggestions();
     updateStatsBar();
-    document.getElementById('command-input').focus();
-    if (source === 'cloud') toast('已从云端读取槽位 ' + (n + 1));
-    else toast('已读取本地槽位 ' + (n + 1));
+    if (document.getElementById('command-input')) {
+      document.getElementById('command-input').focus();
+    }
+    if (source === 'cloud') toast('已从云端读取槽位 ' + slotNum);
+    else toast('已读取本地槽位 ' + slotNum);
   } catch(e) {
     toast('存档损坏，无法读取', 'error');
   }
 }
 
 async function deleteSlot(n) {
-  if (!confirm('确认删除槽位 ' + (n + 1) + ' 的存档？此操作不可撤销。')) return;
-  // Delete scoped local slot
-  var slotKey = getSaveKey(n);
+  var slotNum = n + 1;
+  if (!confirm('确认删除槽位 ' + slotNum + ' 的存档？此操作不可撤销。')) return;
+  // Delete scoped local slots
+  var slotKey = getSaveKey(slotNum);
   if (slotKey) localStorage.removeItem(slotKey);
+  var oldKey = getSaveKey(n);
+  if (oldKey) localStorage.removeItem(oldKey);
 
   if (hasCloud()) {
-    var result = await cloudDelete(n);
-    if (result.ok) toast('已删除槽位 ' + (n + 1) + '（本地及云端）');
-    else toast('已删除本地槽位 ' + (n + 1) + '，但云端删除失败：' + (result.error || '未知错误'), 'error');
+    var result = await cloudDelete(slotNum);
+    if (result.ok) toast('已删除槽位 ' + slotNum + '（本地及云端）');
+    else toast('已删除本地槽位 ' + slotNum + '，但云端删除失败：' + (result.error || '未知错误'), 'error');
   } else {
-    toast('已删除槽位 ' + (n + 1));
+    toast('已删除槽位 ' + slotNum);
   }
   showSaveManager();
 }
 
 async function getSlotInfo(n, opt_cloudSlots) {
-  // Show cloud + current-identity scoped local, prefer cloud if newer
+  var slotNum = n + 1;
   var cloudInfo = null;
   var localInfo = null;
 
@@ -3434,44 +3700,52 @@ async function getSlotInfo(n, opt_cloudSlots) {
       slots = result.ok ? (result.data || []) : null;
     }
     if (slots) {
-      var cs = slots.find(function(s) { return s.slot === n; });
+      var cs = slots.find(function(s) { return s.slot === slotNum; });
+      if (!cs && n > 0) {
+        cs = slots.find(function(s) { return s.slot === n; });
+      }
       if (cs) {
         var sdata = cs.save_data ? (typeof cs.save_data === 'string' ? JSON.parse(cs.save_data) : cs.save_data) : {};
         cloudInfo = {
-          playerName: cs.character_name || '???',
-          worldGenre: cs.world_name || '???',
+          playerName: cs.character_name || sdata.playerName || '???',
+          worldGenre: cs.world_name || sdata.worldGenre || '???',
           worldName: sdata.worldName || cs.world_name || '—',
           charGender: sdata.charGender || (sdata.characterSheet && sdata.characterSheet.gender) || '—',
           turnCount: sdata.turnCount !== undefined ? sdata.turnCount : '—',
           preview: sdata.preview || '',
-          level: 1,
-          savedAt: cs.updated_at || '',
+          level: (sdata.stats && sdata.stats.level) ? sdata.stats.level : 1,
+          savedAt: cs.updated_at || sdata.savedAt || '',
           source: 'cloud',
         };
       }
     }
   }
 
-  // Only read scoped local saves — never read another identity's slots
-  var slotKey = getSaveKey(n);
-  if (slotKey) {
-    var raw = localStorage.getItem(slotKey);
-    if (raw) {
-      try {
-        var s = JSON.parse(raw);
-        localInfo = {
-          playerName: s.playerName || '???',
-          worldGenre: s.worldGenre || '???',
-          worldName: s.worldName || s.worldGenre || '—',
-          charGender: s.charGender || (s.characterSheet && s.characterSheet.gender) || '—',
-          turnCount: s.turnCount !== undefined ? s.turnCount : '—',
-          preview: s.preview || '',
-          level: (s.stats && s.stats.level) ? s.stats.level : 1,
-          savedAt: s.savedAt || '',
-          source: 'local',
-        };
-      } catch(e) {}
-    }
+  // Scoped local slot info (try slotNum, then legacy n, then legacy globals)
+  var slotKey = getSaveKey(slotNum);
+  var raw = slotKey ? localStorage.getItem(slotKey) : null;
+  if (!raw) {
+    var oldSlotKey = getSaveKey(n);
+    if (oldSlotKey) raw = localStorage.getItem(oldSlotKey);
+  }
+  if (!raw) {
+    raw = localStorage.getItem('text_adventure_slot_' + slotNum) || localStorage.getItem('text_adventure_slot_' + n);
+  }
+  if (raw) {
+    try {
+      var s = JSON.parse(raw);
+      localInfo = {
+        playerName: s.playerName || '???',
+        worldGenre: s.worldGenre || '???',
+        worldName: s.worldName || s.worldGenre || '—',
+        charGender: s.charGender || (s.characterSheet && s.characterSheet.gender) || '—',
+        turnCount: s.turnCount !== undefined ? s.turnCount : '—',
+        preview: s.preview || '',
+        level: (s.stats && s.stats.level) ? s.stats.level : 1,
+        savedAt: s.savedAt || '',
+        source: 'local',
+      };
+    } catch(e) {}
   }
 
   // Prefer cloud if it exists and is newer
