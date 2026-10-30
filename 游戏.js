@@ -1,3 +1,10 @@
+// ═══════════════════ IMPORTANT: SUPABASE DEPLOYMENT ═══════════════════
+// 本项目把手机号映射为「手机号@phone.user」模拟邮箱，走 Supabase 邮箱+密码注册。
+// 必须在 Supabase Dashboard → Authentication → Providers → Email 关闭「Confirm email」。
+// 否则 signUp 只有 user、没有 session，注册后不能直接登录。
+// 注意：这不是短信免密注册；仍需至少 6 位密码，且不会验证手机号所有权。
+// ═══════════════════════════════════════════════════════════════════════
+
 // ═══════════════════ LOCAL IDENTITY SYSTEM ═══════════════════
 // currentUser.type: 'guest' | 'cloud'
 let currentUser = null; // { id, email, displayName, type }
