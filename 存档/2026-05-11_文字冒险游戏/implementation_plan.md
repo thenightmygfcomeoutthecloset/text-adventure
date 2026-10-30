@@ -1,6 +1,6 @@
 # 🔍 异界卷 · 全面代码审阅报告
 
-> 审阅范围：[index.html](file:///E:/claude%20code%20library/index.html)（266行）、[样式.css](file:///E:/claude%20code%20library/%E6%A0%B7%E5%BC%8F.css)（1929行）、[游戏.js](file:///E:/claude%20code%20library/%E6%B8%B8%E6%88%8F.js)（3595行）、[数据.js](file:///E:/claude%20code%20library/%E6%95%B0%E6%8D%AE.js)（490行）
+> 审阅范围：[index.html](./index.html)（266行）、[样式.css](./样式.css)（1929行）、[游戏.js](./游戏.js)（3595行）、[数据.js](./数据.js)（490行）
 
 ---
 

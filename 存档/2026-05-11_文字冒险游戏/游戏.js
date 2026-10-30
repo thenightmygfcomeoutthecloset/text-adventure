@@ -802,7 +802,7 @@ async function migrateSaves(oldId, newId) {
           method: 'POST',
           headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, cloudDbHeaders()),
           body: JSON.stringify({
-            user_id: newId, slot: s,
+            user_id: newId, slot: s + 1,
             save_data: sclean,
             title: '',
             world_name: ssnap.worldGenre || '',
@@ -938,7 +938,7 @@ function serializeState() {
 
 function deserializeState(save) {
   state.apiKey = '';
-  _loadApiKey().then(function(k) { if (k) state.apiKey = k; });
+  _loadApiKey().then(function(k) { if (k) state.apiKey = k; }).catch(function(e) { console.warn("Failed to load API key", e); });
   state.worldGenre = save.worldGenre || '';
   state.customWorldDesc = save.customWorldDesc || '';
   state.playerName = save.playerName || '';
@@ -1078,7 +1078,6 @@ function showScreen(name) {
 
   if (name === 'game') {
     updateStatsBar();
-    document.getElementById('command-input').focus();
     document.getElementById('command-input').focus();
     // Scroll-aware stats bar: hide when reading, show when scrolling up
     var narrativeArea = document.getElementById('narrative-area');
@@ -3147,7 +3146,7 @@ async function saveToSlot(n) {
 
   var cloudOk = false;
   if (hasCloud()) {
-    var result = await cloudSave(n);
+    var result = await cloudSave(n + 1);
     cloudOk = result.ok;
     if (!result.ok) {
       toast('本地缓存已保存，但云端同步失败：' + (result.error || '未知错误'), 'error');
@@ -3168,7 +3167,7 @@ async function loadSlot(n) {
 
   // Cloud: try Supabase first (RLS ensures only current user's saves)
   if (hasCloud()) {
-    var result = await cloudLoad(n);
+    var result = await cloudLoad(n + 1);
     if (result.ok && result.data) {
       raw = JSON.stringify(result.data);
       source = 'cloud';
@@ -3205,7 +3204,7 @@ async function deleteSlot(n) {
   if (slotKey) localStorage.removeItem(slotKey);
 
   if (hasCloud()) {
-    var result = await cloudDelete(n);
+    var result = await cloudDelete(n + 1);
     if (result.ok) toast('已删除槽位 ' + (n + 1) + '（本地及云端）');
     else toast('已删除本地槽位 ' + (n + 1) + '，但云端删除失败：' + (result.error || '未知错误'), 'error');
   } else {
@@ -3228,7 +3227,7 @@ async function getSlotInfo(n, opt_cloudSlots) {
       slots = result.ok ? (result.data || []) : null;
     }
     if (slots) {
-      var cs = slots.find(function(s) { return s.slot === n; });
+      var cs = slots.find(function(s) { return s.slot === (n + 1); });
       if (cs) {
         var sdata = cs.save_data ? (typeof cs.save_data === 'string' ? JSON.parse(cs.save_data) : cs.save_data) : {};
         cloudInfo = {
@@ -3504,13 +3503,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Check for saved game on load (scoped to current identity)
   refreshTitleButtons();
-  // Also restore saved API key if any
-  var savedApiKey = localStorage.getItem('text_adventure_apikey');
-  if (savedApiKey) {
-    state.apiKey = savedApiKey;
-    var apiInput = document.getElementById('api-key-input');
-    if (apiInput && !apiInput.value) apiInput.value = savedApiKey;
-  }
+  // Also restore saved API key if any (asynchronously decrypt via _loadApiKey)
+  _loadApiKey().then(function(k) {
+    if (k) {
+      state.apiKey = k;
+      var apiInput = document.getElementById('api-key-input');
+      if (apiInput && !apiInput.value) apiInput.value = k;
+    }
+  }).catch(function(e) { console.error('Failed to load API key', e); });
 
   // Add narrative-end marker
   const endMarker = document.createElement('div');

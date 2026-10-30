@@ -331,7 +331,7 @@ async function viewUser(userId) {
       var s = saves[i];
       var time = s.updated_at ? new Date(s.updated_at).toLocaleString('zh-CN') : '-';
       html += '<tr>' +
-        '<td>' + (s.slot === 0 ? '🔄 自动' : '💾 #' + (s.slot + 1)) + '</td>' +
+        '<td>' + (s.slot === 0 ? '🔄 自动' : '💾 #' + s.slot) + '</td>' +
         '<td>' + esc(s.character_name || '-') + '</td>' +
         '<td>' + esc(s.world_name || '-') + '</td>' +
         '<td>' + esc(s.title || '-') + '</td>' +

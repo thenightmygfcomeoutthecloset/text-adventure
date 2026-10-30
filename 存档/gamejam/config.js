@@ -7,7 +7,7 @@ window.GAME_CONFIG = {
   JAM_BUILD: true,
 
   // ⚠️ 比赛临时 DeepSeek API Key — 请填入真实 Key 后再打包
-  DEEPSEEK_API_KEY: "sk-8d0a18e2efeb411b8524f7cfe8382959",
+  DEEPSEEK_API_KEY: "",
 
   // 隐藏首页 API Key 输入框，评委无需手动输入
   HIDE_API_INPUT: true,
